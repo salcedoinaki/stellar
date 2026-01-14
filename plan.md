@@ -124,16 +124,3 @@
 - Task lifecycle states (pending, running, done, failed, canceled).
 - Retry/backoff and alarms.
 
-## Risks & Pitfalls (watchouts)
-- BEAM in Alpine can have DNS/glibc quirks; prefer Debian slim for releases.
-- Keep heavy computation out of GenServers; offload to Tasks or Rust service.
-- Proto evolution: version `orbital.proto` carefully; regen stubs in CI.
-- WebSocket reconnection/backoff on frontend; surface connection state.
-- Compose vs k8s configs: avoid divergence; centralize env via env files.
-- Secrets: never commit; use k8s Secrets or env-injection locally.
-
-## Faststart Checklist (what to do next)
-1) `mix new stellarops --umbrella` and commit.
-2) Create `docker-compose.dev.yml` with backend + postgres; add dev Dockerfile for backend.
-3) Implement Phase 1 GenServer + supervisor + tests; make `docker compose run backend mix test` green.
-4) Add Phase 2 DynamicSupervisor/Registry; prove restart behavior.
