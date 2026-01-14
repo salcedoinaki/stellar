@@ -1,0 +1,135 @@
+# StellarOps Production Docker Compose
+# Production-ready configuration with health checks and resource limits
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: stellarops-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stellarops_prod_secret}
+      POSTGRES_DB: stellar_prod
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    networks:
+      - stellarops-network
+
+  # Elixir Phoenix Backend
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.elixir.prod
+    container_name: stellarops-backend-prod
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ecto://postgres:${POSTGRES_PASSWORD:-stellarops_prod_secret}@db/stellar_prod
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-$(mix phx.gen.secret)}
+      PHX_HOST: ${PHX_HOST:-localhost}
+      PORT: 4000
+      MIX_ENV: prod
+      RELEASE_COOKIE: ${RELEASE_COOKIE:-stellarops_secret_cookie}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    networks:
+      - stellarops-network
+
+  # Rust Orbital Service
+  orbital:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.rust.prod
+    container_name: stellarops-orbital-prod
+    restart: unless-stopped
+    environment:
+      RUST_LOG: info
+      GRPC_PORT: 50051
+      HTTP_PORT: 9090
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+    networks:
+      - stellarops-network
+
+  # React Frontend with Nginx
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.frontend.prod
+    container_name: stellarops-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      orbital:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+    networks:
+      - stellarops-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  stellarops-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

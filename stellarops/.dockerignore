@@ -1,4 +1,34 @@
-# Elixir build artifacts
+# =============================================================================
+# StellarOps Production .dockerignore
+# =============================================================================
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+LICENSE
+plan.md
+
+# =============================================================================
+# Elixir/Phoenix
+# =============================================================================
+
+# Build artifacts
 _build/
 deps/
 
@@ -8,7 +38,7 @@ deps/
 # Generated on crash by the VM
 erl_crash.dump
 
-# Static artifacts
+# Static artifacts (built in container)
 priv/static/
 
 # Test coverage
@@ -25,3 +55,38 @@ dialyzer/
 
 # Secrets
 *.secret.exs
+
+# =============================================================================
+# Rust
+# =============================================================================
+
+# Build artifacts
+services/orbital_service/target/
+
+# =============================================================================
+# Frontend
+# =============================================================================
+
+# Dependencies (installed in container)
+frontend/node_modules/
+
+# Build output (built in container)
+frontend/dist/
+frontend/.cache/
+
+# =============================================================================
+# Environment & Logs
+# =============================================================================
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/

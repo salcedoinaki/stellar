@@ -22,7 +22,7 @@ export default function MapView() {
   }, [satelliteList, setSatellites])
 
   // Add mock positions for demo (in real app, this would come from orbital service)
-  const satellitesWithPositions = Array.from(satellites.values()).map((sat, index) => ({
+  const satellitesWithPositions = Array.from(satellites.values()).map((sat) => ({
     ...sat,
     latitude: sat.latitude ?? (Math.random() * 100 - 50),
     longitude: sat.longitude ?? (Math.random() * 360 - 180),

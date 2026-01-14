@@ -1,0 +1,51 @@
+# Elixir/Phoenix .dockerignore
+# Excludes unnecessary files from Docker build context
+
+# Build artifacts
+_build/
+deps/
+.elixir_ls/
+erl_crash.dump
+*.ez
+
+# Test artifacts
+cover/
+doc/
+.formatter.exs
+
+# Generated on crash
+*.dump
+
+# Ignore other apps and services (only needed for umbrella)
+apps/orbital_service/
+frontend/
+
+# Local development
+*.local.exs
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+infrastructure/docker/
+
+# Documentation
+*.md
+!README.md
+LICENSE
