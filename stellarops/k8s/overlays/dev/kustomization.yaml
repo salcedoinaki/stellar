@@ -1,0 +1,97 @@
+# StellarOps Dev Overlay
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: stellarops-dev
+
+# Common labels for dev environment
+commonLabels:
+  environment: dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Dev-specific namespace
+nameSuffix: ""
+
+# Override images with dev tags
+images:
+  - name: ghcr.io/stellarops/backend
+    newTag: dev
+  - name: ghcr.io/stellarops/orbital
+    newTag: dev
+  - name: ghcr.io/stellarops/frontend
+    newTag: dev
+
+# Patches for dev environment
+patches:
+  # Reduce replicas for dev
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: backend
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: orbital
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+    target:
+      kind: Deployment
+      name: frontend
+  # Reduce HPA min replicas for dev
+  - patch: |-
+      - op: replace
+        path: /spec/minReplicas
+        value: 1
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+    target:
+      kind: HorizontalPodAutoscaler
+  # Reduce resource limits for dev
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 250m
+    target:
+      kind: Deployment
+      name: backend
+  # Use smaller PVCs for dev
+  - patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 1Gi
+    target:
+      kind: PersistentVolumeClaim
+  - patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 1Gi
+    target:
+      kind: StatefulSet
+      name: postgres
+
+# Override configmaps for dev
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=debug
+      - PHX_HOST=stellarops-dev.local
+  - name: orbital-config
+    behavior: merge
+    literals:
+      - RUST_LOG=debug,orbital_service=trace

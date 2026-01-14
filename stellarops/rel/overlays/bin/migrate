@@ -1,0 +1,29 @@
+#!/bin/sh
+# Elixir Release Migration Script
+# This script is called by the Kubernetes migration job
+
+set -e
+
+echo "Starting database migrations..."
+
+# The release includes ecto.migrate as a custom command
+# We need to run it using the release's eval function
+
+cd /app
+
+# Wait for database to be ready
+echo "Waiting for database connection..."
+for i in $(seq 1 30); do
+  if ./bin/stellarops eval "StellarData.Repo.query(\"SELECT 1\")" 2>/dev/null; then
+    echo "Database is ready!"
+    break
+  fi
+  echo "Attempt $i: Database not ready, waiting..."
+  sleep 2
+done
+
+# Run migrations
+echo "Running Ecto migrations..."
+./bin/stellarops eval "StellarData.Release.migrate()"
+
+echo "Migrations completed successfully!"

@@ -13,13 +13,19 @@ defmodule Stellarops.MixProject do
   end
 
   defp deps do
-    []
+    [
+      # Development and test dependencies
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+    ]
   end
 
   defp aliases do
     [
       setup: ["deps.get", "cmd mix setup"],
-      test: ["cmd mix test"]
+      test: ["cmd mix test"],
+      "ci.lint": ["format --check-formatted", "credo --strict"],
+      "ci.test": ["test --cover"]
     ]
   end
 

@@ -1,0 +1,41 @@
+# StellarOps Backend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: stellarops
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+      protocol: TCP
+    - name: epmd
+      port: 4369
+      targetPort: epmd
+      protocol: TCP
+  selector:
+    app: backend
+---
+# Headless service for Elixir clustering
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend-headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: epmd
+      port: 4369
+      targetPort: epmd
+  selector:
+    app: backend

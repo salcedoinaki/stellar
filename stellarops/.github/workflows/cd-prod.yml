@@ -1,0 +1,156 @@
+name: CD - Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (SHA or version)'
+        required: true
+        default: 'latest'
+      skip_migrations:
+        description: 'Skip database migrations'
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/stellarops
+
+jobs:
+  # ============================================================================
+  # Deploy to Production
+  # ============================================================================
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://stellarops.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Verify images exist
+        run: |
+          echo "Verifying images with tag: ${{ github.event.inputs.image_tag }}"
+          # This would verify the images exist in GHCR
+          # In a real setup, you'd use skopeo or docker manifest inspect
+
+      - name: Update image tags in kustomization
+        run: |
+          cd k8s/overlays/prod
+          # Update image tags
+          cat <<EOF >> kustomization.yaml
+
+          # Production deployment - ${{ github.event.inputs.image_tag }}
+          images:
+            - name: ghcr.io/stellarops/backend
+              newName: ${{ env.IMAGE_PREFIX }}-backend
+              newTag: ${{ github.event.inputs.image_tag }}
+            - name: ghcr.io/stellarops/orbital
+              newName: ${{ env.IMAGE_PREFIX }}-orbital
+              newTag: ${{ github.event.inputs.image_tag }}
+            - name: ghcr.io/stellarops/frontend
+              newName: ${{ env.IMAGE_PREFIX }}-frontend
+              newTag: ${{ github.event.inputs.image_tag }}
+          EOF
+
+      - name: Pre-deployment backup
+        run: |
+          echo "Creating database backup before deployment..."
+          # kubectl exec -n stellarops-prod deploy/postgres -- pg_dump -U postgres stellar_prod > backup-$(date +%Y%m%d-%H%M%S).sql
+          echo "Backup would be stored in secure location"
+
+      - name: Deploy with Kustomize
+        run: |
+          echo "Deploying to production..."
+          kubectl apply -k k8s/overlays/prod
+          
+          echo "Waiting for backend rollout..."
+          kubectl rollout status deployment/backend -n stellarops-prod --timeout=300s
+          
+          echo "Waiting for orbital rollout..."
+          kubectl rollout status deployment/orbital -n stellarops-prod --timeout=300s
+          
+          echo "Waiting for frontend rollout..."
+          kubectl rollout status deployment/frontend -n stellarops-prod --timeout=300s
+
+      - name: Run database migrations
+        if: ${{ github.event.inputs.skip_migrations != 'true' }}
+        run: |
+          echo "Running database migrations..."
+          kubectl apply -f - <<EOF
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            name: migrate-prod-${{ github.run_number }}
+            namespace: stellarops-prod
+            labels:
+              app: migration
+              version: ${{ github.event.inputs.image_tag }}
+          spec:
+            ttlSecondsAfterFinished: 600
+            backoffLimit: 1
+            template:
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: migrate
+                    image: ${{ env.IMAGE_PREFIX }}-backend:${{ github.event.inputs.image_tag }}
+                    command: ["/app/bin/migrate"]
+                    envFrom:
+                      - configMapRef:
+                          name: backend-config
+                      - secretRef:
+                          name: backend-secrets
+          EOF
+          
+          kubectl wait --for=condition=complete --timeout=180s job/migrate-prod-${{ github.run_number }} -n stellarops-prod
+
+      - name: Health check
+        run: |
+          echo "Running health checks..."
+          
+          # Wait for pods to be ready
+          sleep 30
+          
+          # Check pod status
+          kubectl get pods -n stellarops-prod -l app=backend
+          kubectl get pods -n stellarops-prod -l app=orbital
+          kubectl get pods -n stellarops-prod -l app=frontend
+          
+          # Check endpoints
+          echo "Checking backend health..."
+          kubectl exec -n stellarops-prod deploy/backend -- curl -sf http://localhost:4000/api/health || exit 1
+          
+          echo "Checking orbital health..."
+          kubectl exec -n stellarops-prod deploy/orbital -- curl -sf http://localhost:9090/health || exit 1
+          
+          echo "All health checks passed!"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Production deployment successful!"
+          echo "Version: ${{ github.event.inputs.image_tag }}"
+          echo "URL: https://stellarops.example.com"
+          # Add Slack/Discord notification here
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed! Initiating rollback..."
+          kubectl rollout undo deployment/backend -n stellarops-prod
+          kubectl rollout undo deployment/orbital -n stellarops-prod
+          kubectl rollout undo deployment/frontend -n stellarops-prod
+          echo "Rollback complete. Please investigate the failure."

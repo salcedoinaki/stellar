@@ -38,6 +38,8 @@ defmodule StellarWeb.MixProject do
       {:prom_ex, "~> 1.9"},
       {:telemetry_poller, "~> 1.0"},
       {:logger_json, "~> 5.1"},
+      # Clustering
+      {:libcluster, "~> 3.3"},
       # Umbrella dependency
       {:stellar_core, in_umbrella: true}
     ]

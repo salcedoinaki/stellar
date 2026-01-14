@@ -1,0 +1,56 @@
+# StellarOps Kustomize Base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: stellarops
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: stellarops
+
+resources:
+  - namespace.yaml
+  - ingress.yaml
+  # Backend
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/configmap.yaml
+  - backend/secret.yaml
+  - backend/serviceaccount.yaml
+  - backend/hpa.yaml
+  # Orbital
+  - orbital/deployment.yaml
+  - orbital/service.yaml
+  - orbital/configmap.yaml
+  - orbital/hpa.yaml
+  # Frontend
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/configmap.yaml
+  # PostgreSQL
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - postgres/secret.yaml
+  # Prometheus
+  - prometheus/deployment.yaml
+  - prometheus/service.yaml
+  - prometheus/configmap.yaml
+  - prometheus/rbac.yaml
+  - prometheus/pvc.yaml
+  # Grafana
+  - grafana/deployment.yaml
+  - grafana/service.yaml
+  - grafana/secret.yaml
+  - grafana/pvc.yaml
+  - grafana/configmap-datasources.yaml
+  - grafana/configmap-dashboards-config.yaml
+
+# Images can be overridden in overlays
+images:
+  - name: ghcr.io/stellarops/backend
+    newTag: latest
+  - name: ghcr.io/stellarops/orbital
+    newTag: latest
+  - name: ghcr.io/stellarops/frontend
+    newTag: latest

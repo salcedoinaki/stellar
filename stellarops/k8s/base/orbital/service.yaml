@@ -1,0 +1,23 @@
+# StellarOps Orbital Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: orbital
+  labels:
+    app: orbital
+    app.kubernetes.io/name: orbital
+    app.kubernetes.io/component: orbital-service
+    app.kubernetes.io/part-of: stellarops
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    app: orbital

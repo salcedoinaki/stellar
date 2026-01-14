@@ -1,0 +1,8 @@
+# StellarOps Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stellarops
+  labels:
+    app.kubernetes.io/name: stellarops
+    app.kubernetes.io/part-of: stellarops

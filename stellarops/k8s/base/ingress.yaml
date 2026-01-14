@@ -1,0 +1,53 @@
+# StellarOps Ingress
+# Uses nginx-ingress controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stellarops
+  labels:
+    app.kubernetes.io/name: stellarops-ingress
+    app.kubernetes.io/part-of: stellarops
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/websocket-services: "backend"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: stellarops.local
+      http:
+        paths:
+          # Frontend (React SPA)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+          # API backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 4000
+          # WebSocket for Phoenix channels
+          - path: /socket
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 4000
+          # Grafana dashboards
+          - path: /grafana
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana
+                port:
+                  number: 3000

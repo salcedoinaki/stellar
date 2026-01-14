@@ -1,0 +1,22 @@
+# Grafana Dashboards Provider Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  labels:
+    app: grafana
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: stellarops
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: 'stellarops'
+        orgId: 1
+        folder: 'StellarOps'
+        folderUid: 'stellarops'
+        type: file
+        disableDeletion: true
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards

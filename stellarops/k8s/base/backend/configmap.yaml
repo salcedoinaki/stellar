@@ -1,0 +1,25 @@
+# StellarOps Backend ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: stellarops
+data:
+  MIX_ENV: "prod"
+  PHX_SERVER: "true"
+  PHX_HOST: "stellarops.local"
+  PORT: "4000"
+  POOL_SIZE: "10"
+  # Orbital service connection
+  ORBITAL_SERVICE_HOST: "orbital:50051"
+  # Clustering
+  CLUSTER_ENABLED: "true"
+  CLUSTER_STRATEGY: "kubernetes"
+  CLUSTER_KUBERNETES_SELECTOR: "app=backend"
+  CLUSTER_KUBERNETES_NAMESPACE: "stellarops"
+  # Logging
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"

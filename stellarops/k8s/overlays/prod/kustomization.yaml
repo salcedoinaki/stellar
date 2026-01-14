@@ -1,0 +1,104 @@
+# StellarOps Production Overlay
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: stellarops-prod
+
+# Common labels for prod environment
+commonLabels:
+  environment: prod
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Override images with prod tags (use specific SHA tags in real prod)
+images:
+  - name: ghcr.io/stellarops/backend
+    newTag: latest
+  - name: ghcr.io/stellarops/orbital
+    newTag: latest
+  - name: ghcr.io/stellarops/frontend
+    newTag: latest
+
+# Patches for production environment
+patches:
+  # Increase replicas for prod
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+    target:
+      kind: Deployment
+      name: backend
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+      name: orbital
+  - patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+    target:
+      kind: Deployment
+      name: frontend
+  # Increase resource limits for prod
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 200m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 1000m
+    target:
+      kind: Deployment
+      name: backend
+  # Larger PVCs for prod
+  - patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 50Gi
+    target:
+      kind: PersistentVolumeClaim
+      name: prometheus-data
+  - patch: |-
+      - op: replace
+        path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage
+        value: 100Gi
+    target:
+      kind: StatefulSet
+      name: postgres
+  # Update ingress host for prod
+  - patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: stellarops.example.com
+    target:
+      kind: Ingress
+      name: stellarops
+
+# Override configmaps for prod
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    literals:
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - PHX_HOST=stellarops.example.com
+      - POOL_SIZE=20
+
+# Secret generator - in real prod, use sealed-secrets or external-secrets
+secretGenerator:
+  - name: backend-secrets
+    behavior: merge
+    literals:
+      - DATABASE_URL=ecto://postgres:CHANGE_ME@postgres:5432/stellar_prod

@@ -1,0 +1,15 @@
+# StellarOps Orbital Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orbital-config
+  labels:
+    app: orbital
+    app.kubernetes.io/name: orbital
+    app.kubernetes.io/part-of: stellarops
+data:
+  RUST_LOG: "info,orbital_service=debug"
+  GRPC_PORT: "50051"
+  METRICS_PORT: "9090"
+  # Enable JSON logging for production
+  JSON_LOGS: "true"
