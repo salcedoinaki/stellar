@@ -1,6 +1,7 @@
 //! SGP4 orbital propagation implementation
 
-use sgp4::{Constants, Elements, Prediction};
+use chrono::{Datelike, TimeZone, Timelike, Utc};
+use sgp4::{Constants, Elements};
 use tracing::{debug, warn};
 
 /// Result of orbital propagation
@@ -120,9 +121,6 @@ pub fn propagate_trajectory(
 fn tle_epoch_to_unix(elements: &Elements) -> f64 {
     // TLE epoch is in UTC
     let dt = elements.datetime;
-    
-    // Use chrono to convert
-    use chrono::{TimeZone, Utc};
     
     let datetime = Utc
         .with_ymd_and_hms(

@@ -2,6 +2,8 @@
 //!
 //! This service provides gRPC endpoints for satellite position calculation
 //! using Two-Line Element (TLE) sets and the SGP4 propagation algorithm.
+//!
+//! Additionally, HTTP/JSON endpoints are provided for easy integration.
 
 mod generated;
 mod metrics;
@@ -12,7 +14,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::{routing::get, Router};
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tonic::transport::Server;
 use tracing::{info, Level};
@@ -44,6 +52,105 @@ impl AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ============================================================================
+// HTTP/JSON API types
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct PropagateRequest {
+    satellite_id: String,
+    tle_line1: String,
+    tle_line2: String,
+    timestamp_unix: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct PropagateResponse {
+    satellite_id: String,
+    timestamp_unix: i64,
+    position: Position,
+    velocity: Velocity,
+    geodetic: Geodetic,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Position {
+    x_km: f64,
+    y_km: f64,
+    z_km: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct Velocity {
+    vx_km_s: f64,
+    vy_km_s: f64,
+    vz_km_s: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct Geodetic {
+    latitude_deg: f64,
+    longitude_deg: f64,
+    altitude_km: f64,
+}
+
+// HTTP handler for propagation
+async fn propagate_handler(
+    State(_state): State<Arc<RwLock<AppState>>>,
+    Json(req): Json<PropagateRequest>,
+) -> Result<Json<PropagateResponse>, (StatusCode, Json<PropagateResponse>)> {
+    match propagator::propagate(&req.tle_line1, &req.tle_line2, req.timestamp_unix) {
+        Ok(result) => Ok(Json(PropagateResponse {
+            satellite_id: req.satellite_id,
+            timestamp_unix: req.timestamp_unix,
+            position: Position {
+                x_km: result.position_km[0],
+                y_km: result.position_km[1],
+                z_km: result.position_km[2],
+            },
+            velocity: Velocity {
+                vx_km_s: result.velocity_km_s[0],
+                vy_km_s: result.velocity_km_s[1],
+                vz_km_s: result.velocity_km_s[2],
+            },
+            geodetic: Geodetic {
+                latitude_deg: result.geodetic.latitude_deg,
+                longitude_deg: result.geodetic.longitude_deg,
+                altitude_km: result.geodetic.altitude_km,
+            },
+            success: true,
+            error: None,
+        })),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(PropagateResponse {
+                satellite_id: req.satellite_id,
+                timestamp_unix: req.timestamp_unix,
+                position: Position {
+                    x_km: 0.0,
+                    y_km: 0.0,
+                    z_km: 0.0,
+                },
+                velocity: Velocity {
+                    vx_km_s: 0.0,
+                    vy_km_s: 0.0,
+                    vz_km_s: 0.0,
+                },
+                geodetic: Geodetic {
+                    latitude_deg: 0.0,
+                    longitude_deg: 0.0,
+                    altitude_km: 0.0,
+                },
+                success: false,
+                error: Some(e.to_string()),
+            }),
+        )),
     }
 }
 
@@ -93,12 +200,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create the gRPC service
     let orbital_service = OrbitalServiceImpl::new(Arc::clone(&state));
 
-    // Start metrics HTTP server
+    // Start metrics HTTP server (also includes REST API)
     let metrics_state = Arc::clone(&state);
     let metrics_server = tokio::spawn(async move {
         let app = Router::new()
             .route("/metrics", get(metrics::metrics_handler))
             .route("/health", get(metrics::health_handler))
+            .route("/api/propagate", post(propagate_handler))
             .with_state(metrics_state);
 
         let listener = tokio::net::TcpListener::bind(metrics_addr).await.unwrap();

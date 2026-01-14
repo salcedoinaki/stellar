@@ -51,12 +51,13 @@ services:
       - RUST_LOG=info,orbital_service=debug
       - GRPC_PORT=50051
       - METRICS_PORT=9090
+    command: sh -c "cargo build --release && ./target/release/orbital_service"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # ============================================================================
   # PostgreSQL Database

@@ -141,7 +141,7 @@ impl OrbitalService for OrbitalServiceImpl {
         );
 
         // Validate request
-        let tle = req.tle.ok_or_else(|| Status::invalid_argument("TLE is required"))?;
+        let _tle = req.tle.ok_or_else(|| Status::invalid_argument("TLE is required"))?;
 
         // For now, return a stub response
         // Full visibility calculation would require:
