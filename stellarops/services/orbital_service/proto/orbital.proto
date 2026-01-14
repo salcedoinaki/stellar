@@ -1,0 +1,144 @@
+syntax = "proto3";
+
+package orbital;
+
+// Orbital propagation service for satellite position calculations
+// Uses SGP4 algorithm for accurate LEO/MEO satellite tracking
+service OrbitalService {
+  // Propagate satellite position from TLE at a given timestamp
+  rpc PropagatePosition(PropagateRequest) returns (PropagateResponse);
+  
+  // Calculate visibility windows between satellite and ground station
+  rpc CalculateVisibility(VisibilityRequest) returns (VisibilityResponse);
+  
+  // Propagate positions for multiple timestamps (batch)
+  rpc PropagateTrajectory(TrajectoryRequest) returns (TrajectoryResponse);
+  
+  // Health check
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Two-Line Element set for satellite orbit definition
+message Tle {
+  string line1 = 1;
+  string line2 = 2;
+  // Optional: NORAD catalog ID (extracted from TLE or provided separately)
+  string norad_id = 3;
+}
+
+// Position in Earth-Centered Inertial (ECI) coordinates
+message EciPosition {
+  double x_km = 1;  // X position in kilometers
+  double y_km = 2;  // Y position in kilometers
+  double z_km = 3;  // Z position in kilometers
+}
+
+// Velocity in ECI coordinates
+message EciVelocity {
+  double vx_km_s = 1;  // X velocity in km/s
+  double vy_km_s = 2;  // Y velocity in km/s
+  double vz_km_s = 3;  // Z velocity in km/s
+}
+
+// Geodetic position (lat/lon/alt)
+message GeodeticPosition {
+  double latitude_deg = 1;   // Latitude in degrees (-90 to 90)
+  double longitude_deg = 2;  // Longitude in degrees (-180 to 180)
+  double altitude_km = 3;    // Altitude above ellipsoid in km
+}
+
+// Ground station location
+message GroundStation {
+  string id = 1;
+  string name = 2;
+  double latitude_deg = 3;
+  double longitude_deg = 4;
+  double altitude_m = 5;       // Altitude in meters
+  double min_elevation_deg = 6; // Minimum elevation angle for visibility
+}
+
+// Request to propagate position at a specific time
+message PropagateRequest {
+  Tle tle = 1;
+  // Unix timestamp (seconds since epoch) for propagation
+  int64 timestamp_unix = 2;
+  // Optional: satellite ID for logging/metrics
+  string satellite_id = 3;
+}
+
+// Response with propagated position
+message PropagateResponse {
+  string satellite_id = 1;
+  int64 timestamp_unix = 2;
+  EciPosition position = 3;
+  EciVelocity velocity = 4;
+  GeodeticPosition geodetic = 5;
+  // Propagation metadata
+  bool success = 6;
+  string error_message = 7;
+}
+
+// Request to calculate visibility passes
+message VisibilityRequest {
+  Tle tle = 1;
+  GroundStation ground_station = 2;
+  // Time window for visibility calculation
+  int64 start_timestamp_unix = 3;
+  int64 end_timestamp_unix = 4;
+  // Optional: satellite ID
+  string satellite_id = 5;
+}
+
+// A single visibility pass over a ground station
+message Pass {
+  int64 aos_timestamp = 1;  // Acquisition of Signal (rise)
+  int64 los_timestamp = 2;  // Loss of Signal (set)
+  int64 max_elevation_timestamp = 3;  // Time of maximum elevation
+  double max_elevation_deg = 4;  // Maximum elevation angle
+  double aos_azimuth_deg = 5;    // Azimuth at AOS
+  double los_azimuth_deg = 6;    // Azimuth at LOS
+  int64 duration_seconds = 7;    // Pass duration
+}
+
+// Response with visibility passes
+message VisibilityResponse {
+  string satellite_id = 1;
+  string ground_station_id = 2;
+  repeated Pass passes = 3;
+  bool success = 4;
+  string error_message = 5;
+}
+
+// Request for trajectory (multiple timestamps)
+message TrajectoryRequest {
+  Tle tle = 1;
+  int64 start_timestamp_unix = 2;
+  int64 end_timestamp_unix = 3;
+  int64 step_seconds = 4;  // Time step between points
+  string satellite_id = 5;
+}
+
+// Single trajectory point
+message TrajectoryPoint {
+  int64 timestamp_unix = 1;
+  EciPosition position = 2;
+  GeodeticPosition geodetic = 3;
+}
+
+// Response with trajectory points
+message TrajectoryResponse {
+  string satellite_id = 1;
+  repeated TrajectoryPoint points = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// Health check request
+message HealthCheckRequest {}
+
+// Health check response
+message HealthCheckResponse {
+  bool healthy = 1;
+  string version = 2;
+  int64 uptime_seconds = 3;
+}

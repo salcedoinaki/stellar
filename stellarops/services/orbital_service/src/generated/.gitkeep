@@ -1,0 +1,2 @@
+// This file is a placeholder that will be replaced by tonic-build
+// during compilation. The build.rs script generates the actual gRPC code here.

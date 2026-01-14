@@ -1,0 +1,19 @@
+# Generated files
+/target/
+
+# Cargo.lock is usually committed for binaries
+# Uncomment if you prefer not to commit it
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

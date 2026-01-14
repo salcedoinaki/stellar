@@ -23,12 +23,40 @@ services:
       - PHX_SERVER=true
       - PHX_HOST=localhost
       - DATABASE_URL=ecto://postgres:postgres@db:5432/stellarops_dev
+      - ORBITAL_SERVICE_HOST=orbital:50051
     depends_on:
       db:
         condition: service_healthy
     stdin_open: true
     tty: true
     command: iex -S mix phx.server
+
+  # ============================================================================
+  # Rust Orbital Service (gRPC)
+  # ============================================================================
+  orbital:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.rust.dev
+      target: development
+    container_name: stellarops-orbital
+    volumes:
+      - ./services/orbital_service:/app
+      - orbital_cargo:/usr/local/cargo/registry
+      - orbital_target:/app/target
+    ports:
+      - "50051:50051"  # gRPC
+      - "9090:9090"    # Prometheus metrics
+    environment:
+      - RUST_LOG=info,orbital_service=debug
+      - GRPC_PORT=50051
+      - METRICS_PORT=9090
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # ============================================================================
   # PostgreSQL Database
@@ -71,6 +99,8 @@ volumes:
   postgres_data:
   backend_build:
   backend_deps:
+  orbital_cargo:
+  orbital_target:
 
 networks:
   default:
