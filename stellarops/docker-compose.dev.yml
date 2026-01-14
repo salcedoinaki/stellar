@@ -3,6 +3,29 @@
 
 services:
   # ============================================================================
+  # React Frontend (Vite)
+  # ============================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.frontend.dev
+      target: development
+    container_name: stellarops-frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # Prevent overwriting node_modules from host
+    ports:
+      - "5173:5173"  # Vite dev server
+    environment:
+      - VITE_API_URL=http://localhost:4000
+      - VITE_WS_URL=ws://localhost:4000
+      - VITE_ORBITAL_URL=http://localhost:9090
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+
+  # ============================================================================
   # Elixir Backend (umbrella)
   # ============================================================================
   backend:
@@ -22,7 +45,7 @@ services:
       - MIX_ENV=dev
       - PHX_SERVER=true
       - PHX_HOST=localhost
-      - DATABASE_URL=ecto://postgres:postgres@db:5432/stellarops_dev
+      - DATABASE_URL=ecto://postgres:postgres@db:5432/stellar_dev
       - ORBITAL_SERVICE_HOST=orbital:50051
     depends_on:
       db:
@@ -68,7 +91,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: stellarops_dev
+      POSTGRES_DB: stellar_dev
     ports:
       - "5800:5432"  # Using 5800 to avoid Windows excluded port ranges
     volumes:
@@ -102,6 +125,7 @@ volumes:
   backend_deps:
   orbital_cargo:
   orbital_target:
+  frontend_node_modules:
 
 networks:
   default:

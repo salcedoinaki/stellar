@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Leaflet dark theme adjustments */
+.leaflet-container {
+  background: #0f172a;
+}
+
+.leaflet-tile {
+  filter: invert(1) hue-rotate(180deg) brightness(0.8) contrast(0.9);
+}
+
+.leaflet-control-zoom a {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #334155 !important;
+}
+
+.leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.8) !important;
+  color: #94a3b8 !important;
+}
+
+.leaflet-control-attribution a {
+  color: #38bdf8 !important;
+}
+
+/* Status indicator animations */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-nominal {
+  @apply bg-green-500;
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+.status-safe {
+  @apply bg-yellow-500;
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+.status-critical {
+  @apply bg-red-500;
+  animation: status-pulse 0.8s ease-in-out infinite;
+}
+
+/* Card hover effects */
+.satellite-card {
+  @apply transition-all duration-300;
+}
+
+.satellite-card:hover {
+  @apply transform -translate-y-1 shadow-lg shadow-stellar-500/20;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-stellar-400 to-cyan-400 bg-clip-text text-transparent;
+}
