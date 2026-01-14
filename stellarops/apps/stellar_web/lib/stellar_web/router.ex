@@ -29,4 +29,9 @@ defmodule StellarWeb.Router do
 
     get "/health", HealthController, :index
   end
+
+  # Prometheus metrics endpoint
+  scope "/" do
+    get "/metrics", PromEx.Plug, prom_ex_module: StellarWeb.PromEx
+  end
 end

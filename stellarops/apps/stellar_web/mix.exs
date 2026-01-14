@@ -34,6 +34,10 @@ defmodule StellarWeb.MixProject do
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.5"},
       {:cors_plug, "~> 3.0"},
+      # Observability
+      {:prom_ex, "~> 1.9"},
+      {:telemetry_poller, "~> 1.0"},
+      {:logger_json, "~> 5.1"},
       # Umbrella dependency
       {:stellar_core, in_umbrella: true}
     ]

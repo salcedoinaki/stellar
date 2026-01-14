@@ -10,6 +10,8 @@ defmodule StellarWeb.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # Start PromEx for metrics
+      StellarWeb.PromEx,
       # Start the PubSub system
       {Phoenix.PubSub, name: StellarWeb.PubSub},
       # Start the Endpoint (http/https)

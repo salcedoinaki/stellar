@@ -1,0 +1,37 @@
+# Prometheus configuration for StellarOps
+# Scrapes metrics from Elixir backend and Rust orbital service
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'stellarops'
+
+rule_files:
+  # - "alerts.yml"
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Elixir Phoenix Backend
+  - job_name: 'backend'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:4000']
+        labels:
+          service: 'backend'
+          language: 'elixir'
+
+  # Rust Orbital Service
+  - job_name: 'orbital'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['orbital:9090']
+        labels:
+          service: 'orbital'
+          language: 'rust'

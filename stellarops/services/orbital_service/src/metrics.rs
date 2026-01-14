@@ -34,6 +34,21 @@ lazy_static! {
         "Total number of trajectory points generated",
         &["status"]
     ).unwrap();
+
+    /// Counter for HTTP requests by endpoint and status
+    pub static ref HTTP_REQUESTS: CounterVec = register_counter_vec!(
+        "orbital_http_requests_total",
+        "Total number of HTTP requests",
+        &["endpoint", "method", "status"]
+    ).unwrap();
+
+    /// Histogram for HTTP request latency
+    pub static ref HTTP_LATENCY: HistogramVec = register_histogram_vec!(
+        "orbital_http_request_seconds",
+        "HTTP request latency in seconds",
+        &["endpoint", "method"],
+        vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+    ).unwrap();
 }
 
 /// Metrics state for recording from service handlers

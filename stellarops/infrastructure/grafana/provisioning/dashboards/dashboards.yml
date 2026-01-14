@@ -1,0 +1,15 @@
+# Grafana provisioning: dashboards
+# Auto-loads dashboards from the provisioned folder
+
+apiVersion: 1
+
+providers:
+  - name: 'StellarOps'
+    orgId: 1
+    folder: 'StellarOps'
+    folderUid: 'stellarops'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
