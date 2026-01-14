@@ -1,0 +1,27 @@
+# Elixir build artifacts
+_build/
+deps/
+
+# Mix archives
+.fetch
+
+# Generated on crash by the VM
+erl_crash.dump
+
+# Static artifacts
+priv/static/
+
+# Test coverage
+cover/
+
+# Dialyzer
+.dialyzer/
+dialyzer/
+*.plt
+
+# Editor
+.elixir_ls/
+*.beam
+
+# Secrets
+*.secret.exs

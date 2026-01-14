@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  MIX_ENV: test
+  ELIXIR_VERSION: "1.16"
+  OTP_VERSION: "26"
+
+jobs:
+  # ============================================================================
+  # Backend (Elixir) Tests
+  # ============================================================================
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stellarops_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+        env:
+          DATABASE_URL: ecto://postgres:postgres@localhost:5432/stellarops_test
+
+  # ============================================================================
+  # Frontend (React/TS) Tests - Placeholder
+  # ============================================================================
+  frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    if: false  # Disabled until Phase 6
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test
+        working-directory: frontend
+        run: npm run test
+
+  # ============================================================================
+  # Rust Orbital Service Tests - Placeholder
+  # ============================================================================
+  orbital:
+    name: Orbital Service Tests
+    runs-on: ubuntu-latest
+    if: false  # Disabled until Phase 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/orbital_service
+
+      - name: Check formatting
+        working-directory: services/orbital_service
+        run: cargo fmt --check
+
+      - name: Lint
+        working-directory: services/orbital_service
+        run: cargo clippy -- -D warnings
+
+      - name: Test
+        working-directory: services/orbital_service
+        run: cargo test

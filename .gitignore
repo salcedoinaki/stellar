@@ -1,0 +1,5 @@
+/stellarops/infrastructure/docker
+/stellarops/config
+/stellarops/apps/stellar_core/test/stellar_core
+/stellarops/apps/stellar_core/lib
+/stellarops/apps

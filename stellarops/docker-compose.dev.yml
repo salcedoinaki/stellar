@@ -1,0 +1,75 @@
+# StellarOps Development Environment
+# Usage: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  # ============================================================================
+  # Elixir Backend (umbrella)
+  # ============================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.elixir.dev
+    container_name: stellarops-backend
+    volumes:
+      # Mount source for live reload
+      - .:/app
+      # Persist build artifacts and deps
+      - backend_build:/app/_build
+      - backend_deps:/app/deps
+    ports:
+      - "4000:4000"  # Phoenix (future)
+    environment:
+      - MIX_ENV=dev
+      - DATABASE_URL=ecto://postgres:postgres@db:5432/stellarops_dev
+    depends_on:
+      db:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    command: iex -S mix
+
+  # ============================================================================
+  # PostgreSQL Database
+  # ============================================================================
+  db:
+    image: postgres:16-alpine
+    container_name: stellarops-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stellarops_dev
+    ports:
+      - "5800:5432"  # Using 5800 to avoid Windows excluded port ranges
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # pgAdmin (optional, for database inspection)
+  # ============================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stellarops-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@stellarops.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    profiles:
+      - tools  # Only starts with: docker compose --profile tools up
+
+volumes:
+  postgres_data:
+  backend_build:
+  backend_deps:
+
+networks:
+  default:
+    name: stellarops-network

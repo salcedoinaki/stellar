@@ -1,0 +1,43 @@
+# Elixir/Erlang
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+*.ez
+*.beam
+/config/*.secret.exs
+.elixir_ls/
+
+# Node
+node_modules/
+dist/
+.npm/
+*.tsbuildinfo
+
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+/tmp/
