@@ -19,6 +19,27 @@ defmodule StellarWeb.FallbackController do
     |> render(:error, message: "Unauthorized")
   end
 
+  def call(conn, {:error, {:unprocessable_entity, message}}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> put_view(json: StellarWeb.ErrorJSON)
+    |> render(:error, message: message)
+  end
+
+  def call(conn, {:error, %Ecto.Changeset{} = changeset}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> put_view(json: StellarWeb.ChangesetJSON)
+    |> render(:error, changeset: changeset)
+  end
+
+  def call(conn, {:error, reason}) when is_binary(reason) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> put_view(json: StellarWeb.ErrorJSON)
+    |> render(:error, message: reason)
+  end
+
   def call(conn, {:error, reason}) do
     conn
     |> put_status(:unprocessable_entity)
