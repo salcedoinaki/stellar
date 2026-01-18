@@ -1,0 +1,86 @@
+# Production Dockerfile for Rust Orbital Service
+# Multi-stage build for minimal runtime image
+
+# =============================================================================
+# Stage 1: Build Stage with cargo-chef for caching
+# =============================================================================
+FROM rust:1.85-bookworm AS chef
+
+RUN cargo install cargo-chef
+WORKDIR /app
+
+# =============================================================================
+# Stage 2: Prepare recipe for dependency caching
+# =============================================================================
+FROM chef AS planner
+
+COPY services/orbital_service/Cargo.toml services/orbital_service/Cargo.lock ./
+COPY services/orbital_service/src ./src
+COPY services/orbital_service/proto ./proto
+COPY services/orbital_service/build.rs ./
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+# =============================================================================
+# Stage 3: Build dependencies and application
+# =============================================================================
+FROM chef AS builder
+
+# Install protobuf compiler
+RUN apt-get update && apt-get install -y protobuf-compiler && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Copy and build dependencies first (cached)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Copy source and build application
+COPY services/orbital_service/Cargo.toml services/orbital_service/Cargo.lock ./
+COPY services/orbital_service/src ./src
+COPY services/orbital_service/proto ./proto
+COPY services/orbital_service/build.rs ./
+
+# Build release binary
+RUN cargo build --release
+
+# Strip binary for smaller size
+RUN strip target/release/orbital_service
+
+# =============================================================================
+# Stage 4: Runtime Stage
+# =============================================================================
+FROM debian:bookworm-slim AS runtime
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Create non-root user
+RUN groupadd --gid 1000 orbital && \
+    useradd --uid 1000 --gid orbital --shell /bin/bash --create-home orbital
+
+# Copy binary from builder
+COPY --from=builder --chown=orbital:orbital /app/target/release/orbital_service ./
+
+# Set user
+USER orbital
+
+# Environment variables
+ENV RUST_LOG=info
+ENV GRPC_PORT=50051
+ENV HTTP_PORT=9090
+
+# Expose ports
+EXPOSE 50051
+EXPOSE 9090
+
+# Health check using HTTP endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:9090/health || exit 1
+
+# Run the service
+CMD ["./orbital_service"]

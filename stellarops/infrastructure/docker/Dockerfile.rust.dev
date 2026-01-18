@@ -1,0 +1,59 @@
+# Development Dockerfile for Rust orbital service
+
+FROM rust:1.85-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests first for better caching
+COPY services/orbital_service/Cargo.toml services/orbital_service/Cargo.lock* ./
+
+# Create dummy src and proto to cache dependencies
+RUN mkdir -p src proto && echo "fn main() {}" > src/main.rs
+RUN cargo build --release 2>/dev/null || true
+RUN rm -rf src
+
+# Copy source code
+COPY services/orbital_service/ .
+
+# Build the service
+RUN cargo build --release
+
+# Development image (simpler - no cargo-watch due to dependency issues)
+FROM rust:1.85-slim AS development
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    protobuf-compiler \
+    pkg-config \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Mount source code as volume in dev
+EXPOSE 50051 9090
+
+CMD ["cargo", "watch", "-x", "run"]
+
+# Production image
+FROM debian:bookworm-slim AS production
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/orbital_service /usr/local/bin/
+
+EXPOSE 50051 9090
+
+CMD ["orbital_service"]
