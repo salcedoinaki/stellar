@@ -24,6 +24,8 @@ ENV MIX_ENV=dev
 COPY mix.exs mix.lock* ./
 COPY config config/
 COPY apps/stellar_core/mix.exs apps/stellar_core/
+COPY apps/stellar_data/mix.exs apps/stellar_data/
+COPY apps/stellar_web/mix.exs apps/stellar_web/
 
 # Get dependencies (cached layer)
 RUN mix deps.get

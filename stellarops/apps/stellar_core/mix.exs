@@ -24,6 +24,7 @@ defmodule StellarCore.MixProject do
 
   defp deps do
     [
+      {:stellar_data, in_umbrella: true},
       {:stream_data, "~> 1.0", only: [:test, :dev]}
     ]
   end

@@ -36,6 +36,9 @@ defmodule StellarWeb.MixProject do
       {:cors_plug, "~> 3.0"},
       # Observability
       {:prom_ex, "~> 1.9"},
+      {:finch, "~> 0.18"},
+      {:castore, "~> 1.0"},
+      {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:logger_json, "~> 5.1"},
       # Clustering
