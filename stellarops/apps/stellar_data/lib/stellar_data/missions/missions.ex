@@ -77,8 +77,6 @@ defmodule StellarData.Missions do
   Gets all pending missions ordered by priority and deadline.
   """
   def get_pending_missions do
-    priority_order = [:critical, :high, :normal, :low]
-
     Mission
     |> where([m], m.status == :pending)
     |> where([m], is_nil(m.next_retry_at) or m.next_retry_at <= ^DateTime.utc_now())

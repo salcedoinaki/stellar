@@ -289,23 +289,20 @@ defmodule StellarCore.Scheduler.MissionScheduler do
     satellite_id = mission.satellite_id
 
     # Consume resources
-    case Satellite.update_state(satellite_id, %{
-           energy: -mission.required_energy,
-           memory_used: mission.required_memory
-         }) do
-      {:ok, _} ->
-        # Simulate mission execution
-        Process.sleep(min(mission.estimated_duration * 100, 10_000))
+    with {:ok, _} <- Satellite.update_energy(satellite_id, -mission.required_energy),
+         {:ok, _} <- Satellite.update_memory(satellite_id, mission.required_memory) do
+      # Simulate mission execution
+      Process.sleep(min(mission.estimated_duration * 100, 10_000))
 
-        # Mission completed successfully
-        report_completion(mission.id, %{
-          executed_at: DateTime.utc_now(),
-          duration_ms: mission.estimated_duration * 100
-        })
+      # Mission completed successfully
+      report_completion(mission.id, %{
+        executed_at: DateTime.utc_now(),
+        duration_ms: mission.estimated_duration * 100
+      })
 
-        # Release memory
-        Satellite.update_state(satellite_id, %{memory_used: -mission.required_memory})
-
+      # Release memory (reset to 0 or previous value)
+      Satellite.update_memory(satellite_id, 0)
+    else
       {:error, reason} ->
         report_failure(mission.id, "Resource allocation failed: #{inspect(reason)}")
     end

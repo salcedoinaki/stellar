@@ -14,10 +14,10 @@ defmodule StellarCore.Scheduler.DownlinkManager do
   require Logger
 
   alias StellarData.GroundStations
-  alias StellarData.GroundStations.ContactWindow
 
   @window_check_interval :timer.seconds(10)
-  @prediction_horizon_hours 24
+  # Prediction horizon for contact window lookups (24 hours)
+  # TODO: Implement horizon-based window prediction
 
   # ============================================================================
   # Client API
