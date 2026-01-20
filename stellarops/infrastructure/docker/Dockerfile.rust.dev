@@ -40,7 +40,8 @@ RUN apt-get update && apt-get install -y \
 # Mount source code as volume in dev
 EXPOSE 50051 9090
 
-CMD ["cargo", "watch", "-x", "run"]
+# Default: rebuild and run (docker-compose overrides this)
+CMD ["sh", "-c", "cargo build --release && ./target/release/orbital_service"]
 
 # Production image
 FROM debian:bookworm-slim AS production

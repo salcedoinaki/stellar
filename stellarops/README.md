@@ -5,9 +5,20 @@
 ## Quick Start (Docker)
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+# Start all services
+docker compose -f docker-compose.dev.yml up -d --build
+
+# Initialize the database (first time only)
+docker compose -f docker-compose.dev.yml exec backend mix ecto.setup
+
+# Access the Elixir shell
 docker compose -f docker-compose.dev.yml exec backend iex -S mix
 ```
+
+**Endpoints:**
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:4000
+- Orbital Service: http://localhost:9090
 
 ## Project Structure
 

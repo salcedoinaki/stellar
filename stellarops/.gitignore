@@ -18,7 +18,7 @@ dist/
 
 # Rust
 /target/
-Cargo.lock
+# Cargo.lock is committed for applications (not libraries) for reproducible builds
 **/*.rs.bk
 
 # Docker
