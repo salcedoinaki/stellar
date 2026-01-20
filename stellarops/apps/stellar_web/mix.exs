@@ -34,9 +34,12 @@ defmodule StellarWeb.MixProject do
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.5"},
       {:cors_plug, "~> 3.0"},
-      # Observability
+      # Observability - prom_ex with all required optional deps
       {:prom_ex, "~> 1.9"},
       {:finch, "~> 0.18"},
+      {:mint, "~> 1.0"},
+      {:nimble_pool, "~> 1.0"},
+      {:nimble_options, "~> 1.0"},
       {:castore, "~> 1.0"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
