@@ -59,16 +59,20 @@ defmodule StellarCore.SatelliteTest do
   end
 
   describe "get_state/1 and fetch_state/1" do
-    test "get_state returns the satellite state" do
+    test "get_state returns {:ok, state} tuple" do
       {:ok, _} = Satellite.start("API-TEST-005")
 
-      state = Satellite.get_state("API-TEST-005")
+      assert {:ok, state} = Satellite.get_state("API-TEST-005")
       assert %State{} = state
       assert state.id == "API-TEST-005"
       assert state.mode == :nominal
       assert state.energy == 100.0
 
       Satellite.stop("API-TEST-005")
+    end
+
+    test "get_state returns {:error, :not_found} for non-existent satellite" do
+      assert {:error, :not_found} = Satellite.get_state("NONEXISTENT")
     end
 
     test "fetch_state returns {:ok, state} or {:error, :not_found}" do
@@ -128,13 +132,17 @@ defmodule StellarCore.SatelliteTest do
     test "updates satellite energy" do
       {:ok, _} = Satellite.start("API-TEST-013")
 
-      Satellite.update_energy("API-TEST-013", -30.0)
+      assert {:ok, :updated} = Satellite.update_energy("API-TEST-013", -30.0)
       :timer.sleep(10)
 
-      state = Satellite.get_state("API-TEST-013")
+      {:ok, state} = Satellite.get_state("API-TEST-013")
       assert state.energy == 70.0
 
       Satellite.stop("API-TEST-013")
+    end
+
+    test "returns error for non-existent satellite" do
+      assert {:error, :not_found} = Satellite.update_energy("NONEXISTENT", -10.0)
     end
   end
 
@@ -142,13 +150,17 @@ defmodule StellarCore.SatelliteTest do
     test "updates satellite memory usage" do
       {:ok, _} = Satellite.start("API-TEST-014")
 
-      Satellite.update_memory("API-TEST-014", 256.0)
+      assert {:ok, :updated} = Satellite.update_memory("API-TEST-014", 256.0)
       :timer.sleep(10)
 
-      state = Satellite.get_state("API-TEST-014")
+      {:ok, state} = Satellite.get_state("API-TEST-014")
       assert state.memory_used == 256.0
 
       Satellite.stop("API-TEST-014")
+    end
+
+    test "returns error for non-existent satellite" do
+      assert {:error, :not_found} = Satellite.update_memory("NONEXISTENT", 100.0)
     end
   end
 
@@ -156,13 +168,17 @@ defmodule StellarCore.SatelliteTest do
     test "sets satellite mode" do
       {:ok, _} = Satellite.start("API-TEST-015")
 
-      Satellite.set_mode("API-TEST-015", :safe)
+      assert {:ok, :updated} = Satellite.set_mode("API-TEST-015", :safe)
       :timer.sleep(10)
 
-      state = Satellite.get_state("API-TEST-015")
+      {:ok, state} = Satellite.get_state("API-TEST-015")
       assert state.mode == :safe
 
       Satellite.stop("API-TEST-015")
+    end
+
+    test "returns error for non-existent satellite" do
+      assert {:error, :not_found} = Satellite.set_mode("NONEXISTENT", :safe)
     end
   end
 
@@ -170,13 +186,29 @@ defmodule StellarCore.SatelliteTest do
     test "updates satellite position" do
       {:ok, _} = Satellite.start("API-TEST-016")
 
-      Satellite.update_position("API-TEST-016", {1000.0, 2000.0, 3000.0})
+      assert {:ok, :updated} = Satellite.update_position("API-TEST-016", {1000.0, 2000.0, 3000.0})
       :timer.sleep(10)
 
-      state = Satellite.get_state("API-TEST-016")
+      {:ok, state} = Satellite.get_state("API-TEST-016")
       assert state.position == {1000.0, 2000.0, 3000.0}
 
       Satellite.stop("API-TEST-016")
+    end
+
+    test "accepts integer coordinates" do
+      {:ok, _} = Satellite.start("API-TEST-017")
+
+      assert {:ok, :updated} = Satellite.update_position("API-TEST-017", {1000, 2000, 3000})
+      :timer.sleep(10)
+
+      {:ok, state} = Satellite.get_state("API-TEST-017")
+      assert state.position == {1000.0, 2000.0, 3000.0}
+
+      Satellite.stop("API-TEST-017")
+    end
+
+    test "returns error for non-existent satellite" do
+      assert {:error, :not_found} = Satellite.update_position("NONEXISTENT", {0.0, 0.0, 0.0})
     end
   end
 end

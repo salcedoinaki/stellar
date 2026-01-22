@@ -64,7 +64,7 @@ defmodule StellarWeb.SatelliteChannel do
 
     case Satellite.start(id) do
       {:ok, _pid} ->
-        state = Satellite.get_state(id)
+        {:ok, state} = Satellite.get_state(id)
         broadcast!(socket, "satellite_created", serialize_state(state))
         {:reply, {:ok, serialize_state(state)}, socket}
 
@@ -79,14 +79,16 @@ defmodule StellarWeb.SatelliteChannel do
   @impl true
   def handle_in("update_energy", %{"id" => id, "delta" => delta}, socket)
       when is_number(delta) do
-    if Satellite.alive?(id) do
-      Satellite.update_energy(id, delta)
-      :timer.sleep(5)
-      state = Satellite.get_state(id)
-      broadcast!(socket, "satellite_updated", serialize_state(state))
-      {:reply, {:ok, serialize_state(state)}, socket}
-    else
-      {:reply, {:error, %{reason: "not_found"}}, socket}
+    case Satellite.update_energy(id, delta) do
+      {:ok, :updated} ->
+        # Use non-blocking delay via Process.sleep (short enough to not block channel)
+        Process.sleep(5)
+        {:ok, state} = Satellite.get_state(id)
+        broadcast!(socket, "satellite_updated", serialize_state(state))
+        {:reply, {:ok, serialize_state(state)}, socket}
+
+      {:error, :not_found} ->
+        {:reply, {:error, %{reason: "not_found"}}, socket}
     end
   end
 
@@ -98,15 +100,17 @@ defmodule StellarWeb.SatelliteChannel do
       mode == nil ->
         {:reply, {:error, %{reason: "invalid_mode"}}, socket}
 
-      not Satellite.alive?(id) ->
-        {:reply, {:error, %{reason: "not_found"}}, socket}
-
       true ->
-        Satellite.set_mode(id, mode)
-        :timer.sleep(5)
-        state = Satellite.get_state(id)
-        broadcast!(socket, "satellite_updated", serialize_state(state))
-        {:reply, {:ok, serialize_state(state)}, socket}
+        case Satellite.set_mode(id, mode) do
+          {:ok, :updated} ->
+            Process.sleep(5)
+            {:ok, state} = Satellite.get_state(id)
+            broadcast!(socket, "satellite_updated", serialize_state(state))
+            {:reply, {:ok, serialize_state(state)}, socket}
+
+          {:error, :not_found} ->
+            {:reply, {:error, %{reason: "not_found"}}, socket}
+        end
     end
   end
 
@@ -147,7 +151,7 @@ defmodule StellarWeb.SatelliteChannel do
   end
 
   defp generate_id do
-    "SAT-#{:rand.uniform(99999) |> Integer.to_string() |> String.pad_leading(5, "0")}"
+    "SAT-" <> (Ecto.UUID.generate() |> String.slice(0, 8) |> String.upcase())
   end
 
   defp parse_mode("nominal"), do: :nominal
