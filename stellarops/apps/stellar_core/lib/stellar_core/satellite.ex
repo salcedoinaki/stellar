@@ -83,32 +83,49 @@ defmodule StellarCore.Satellite do
   @doc """
   Returns the current state of a satellite.
 
-  Raises if the satellite doesn't exist.
+  Returns `{:ok, state}` on success, `{:error, :not_found}` if satellite doesn't exist.
 
   ## Examples
 
-      iex> state = StellarCore.Satellite.get_state("SAT-001")
+      iex> StellarCore.Satellite.get_state("SAT-001")
+      {:ok, %StellarCore.Satellite.State{id: "SAT-001", ...}}
+  """
+  @spec get_state(String.t()) :: {:ok, State.t()} | {:error, :not_found}
+  def get_state(id) when is_binary(id) do
+    case Registry.lookup(id) do
+      {:ok, _pid} ->
+        {:ok, Server.get_state(id)}
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Returns the current state of a satellite, raising if not found.
+
+  ## Examples
+
+      iex> state = StellarCore.Satellite.get_state!("SAT-001")
       %StellarCore.Satellite.State{id: "SAT-001", ...}
   """
-  @spec get_state(String.t()) :: State.t()
-  def get_state(id) when is_binary(id) do
-    Server.get_state(id)
+  @spec get_state!(String.t()) :: State.t()
+  def get_state!(id) when is_binary(id) do
+    case get_state(id) do
+      {:ok, state} -> state
+      {:error, :not_found} -> raise "Satellite #{id} not found"
+    end
   end
 
   @doc """
   Safely gets the state of a satellite.
 
   Returns `{:ok, state}` or `{:error, :not_found}`.
+
+  Deprecated: Use `get_state/1` instead, which now returns the same tuple format.
   """
   @spec fetch_state(String.t()) :: {:ok, State.t()} | {:error, :not_found}
   def fetch_state(id) when is_binary(id) do
-    case Registry.lookup(id) do
-      {:ok, _pid} ->
-        {:ok, Server.get_state(id)}
-
-      :error ->
-        {:error, :not_found}
-    end
+    get_state(id)
   end
 
   @doc """
@@ -133,7 +150,7 @@ defmodule StellarCore.Satellite do
   @spec list_states() :: [State.t()]
   def list_states do
     list()
-    |> Enum.map(&get_state/1)
+    |> Enum.map(&get_state!/1)
   end
 
   # ============================================================================
@@ -143,27 +160,41 @@ defmodule StellarCore.Satellite do
   @doc """
   Updates a satellite's energy by the given delta.
 
+  Returns `{:ok, :updated}` on success, `{:error, :not_found}` if satellite doesn't exist.
+
   ## Examples
 
       iex> StellarCore.Satellite.update_energy("SAT-001", -10.0)
-      :ok
+      {:ok, :updated}
   """
-  @spec update_energy(String.t(), float()) :: :ok
+  @spec update_energy(String.t(), float()) :: {:ok, :updated} | {:error, :not_found}
   def update_energy(id, delta) when is_binary(id) and is_number(delta) do
-    Server.update_energy(id, delta)
+    if alive?(id) do
+      Server.update_energy(id, delta)
+      {:ok, :updated}
+    else
+      {:error, :not_found}
+    end
   end
 
   @doc """
   Updates a satellite's memory usage.
 
+  Returns `{:ok, :updated}` on success, `{:error, :not_found}` if satellite doesn't exist.
+
   ## Examples
 
       iex> StellarCore.Satellite.update_memory("SAT-001", 256.0)
-      :ok
+      {:ok, :updated}
   """
-  @spec update_memory(String.t(), float()) :: :ok
+  @spec update_memory(String.t(), float()) :: {:ok, :updated} | {:error, :not_found}
   def update_memory(id, memory) when is_binary(id) and is_number(memory) and memory >= 0 do
-    Server.update_memory(id, memory)
+    if alive?(id) do
+      Server.update_memory(id, memory)
+      {:ok, :updated}
+    else
+      {:error, :not_found}
+    end
   end
 
   @doc """
@@ -171,27 +202,41 @@ defmodule StellarCore.Satellite do
 
   Valid modes: `:nominal`, `:safe`, `:survival`
 
+  Returns `{:ok, :updated}` on success, `{:error, :not_found}` if satellite doesn't exist.
+
   ## Examples
 
       iex> StellarCore.Satellite.set_mode("SAT-001", :safe)
-      :ok
+      {:ok, :updated}
   """
-  @spec set_mode(String.t(), State.mode()) :: :ok
+  @spec set_mode(String.t(), State.mode()) :: {:ok, :updated} | {:error, :not_found}
   def set_mode(id, mode) when is_binary(id) and mode in [:nominal, :safe, :survival] do
-    Server.set_mode(id, mode)
+    if alive?(id) do
+      Server.set_mode(id, mode)
+      {:ok, :updated}
+    else
+      {:error, :not_found}
+    end
   end
 
   @doc """
   Updates a satellite's position.
 
+  Returns `{:ok, :updated}` on success, `{:error, :not_found}` if satellite doesn't exist.
+
   ## Examples
 
       iex> StellarCore.Satellite.update_position("SAT-001", {1000.0, 2000.0, 3000.0})
-      :ok
+      {:ok, :updated}
   """
-  @spec update_position(String.t(), {float(), float(), float()}) :: :ok
+  @spec update_position(String.t(), {number(), number(), number()}) :: {:ok, :updated} | {:error, :not_found}
   def update_position(id, {x, y, z} = position)
       when is_binary(id) and is_number(x) and is_number(y) and is_number(z) do
-    Server.update_position(id, position)
+    if alive?(id) do
+      Server.update_position(id, position)
+      {:ok, :updated}
+    else
+      {:error, :not_found}
+    end
   end
 end
