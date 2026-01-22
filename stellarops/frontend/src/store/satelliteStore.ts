@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import type { Satellite, TelemetryData, SatelliteMode } from '../types'
+import type { ConnectionState } from '../services/socket'
 
 interface SatelliteStoreState {
   // Satellite data
@@ -12,7 +13,9 @@ interface SatelliteStoreState {
   
   // Connection status
   isConnected: boolean
+  connectionState: ConnectionState
   lastUpdate: Date | null
+  reconnectAttempt: number
   
   // Actions
   setSatellites: (satellites: Satellite[]) => void
@@ -24,6 +27,8 @@ interface SatelliteStoreState {
   clearTelemetry: (satelliteId: string) => void
   
   setConnected: (connected: boolean) => void
+  setConnectionState: (state: ConnectionState) => void
+  setReconnectAttempt: (attempt: number) => void
   
   // Computed getters
   getSatellite: (id: string) => Satellite | undefined
@@ -42,7 +47,9 @@ export const useSatelliteStore = create<SatelliteStoreState>()(
       selectedSatelliteId: null,
       telemetryHistory: new Map(),
       isConnected: false,
+      connectionState: 'disconnected' as ConnectionState,
       lastUpdate: null,
+      reconnectAttempt: 0,
 
       // Actions
       setSatellites: (satellites) => {
@@ -114,6 +121,17 @@ export const useSatelliteStore = create<SatelliteStoreState>()(
 
       setConnected: (connected) => {
         set({ isConnected: connected })
+      },
+
+      setConnectionState: (state) => {
+        set({ 
+          connectionState: state, 
+          isConnected: state === 'connected' 
+        })
+      },
+
+      setReconnectAttempt: (attempt) => {
+        set({ reconnectAttempt: attempt })
       },
 
       // Computed getters

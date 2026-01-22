@@ -200,9 +200,27 @@ defmodule StellarCore.Orbital do
     make_http_request(:post, url, body)
   end
 
-  # For visibility, fall back to mock until Rust endpoint is added
   defp call_http(:calculate_visibility, request) do
-    mock_response(:calculate_visibility, request)
+    url = "#{orbital_http_url()}/api/visibility"
+
+    body =
+      Jason.encode!(%{
+        satellite_id: request.satellite_id,
+        tle_line1: request.tle.line1,
+        tle_line2: request.tle.line2,
+        ground_station: %{
+          id: request.ground_station.id,
+          name: request.ground_station.name,
+          latitude_deg: request.ground_station.latitude_deg,
+          longitude_deg: request.ground_station.longitude_deg,
+          altitude_m: request.ground_station.altitude_m,
+          min_elevation_deg: request.ground_station.min_elevation_deg
+        },
+        start_timestamp_unix: request.start_timestamp_unix,
+        end_timestamp_unix: request.end_timestamp_unix
+      })
+
+    make_http_request(:post, url, body)
   end
 
   defp make_http_request(method, url, body) do

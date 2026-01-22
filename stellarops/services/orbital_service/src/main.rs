@@ -131,6 +131,48 @@ struct Geodetic {
     altitude_km: f64,
 }
 
+// Visibility request/response types
+#[derive(Debug, Deserialize)]
+struct VisibilityHttpRequest {
+    satellite_id: String,
+    tle_line1: String,
+    tle_line2: String,
+    ground_station: GroundStationInput,
+    start_timestamp_unix: i64,
+    end_timestamp_unix: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GroundStationInput {
+    id: String,
+    name: String,
+    latitude_deg: f64,
+    longitude_deg: f64,
+    altitude_m: f64,
+    min_elevation_deg: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct VisibilityHttpResponse {
+    satellite_id: String,
+    ground_station_id: String,
+    passes: Vec<PassInfo>,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PassInfo {
+    aos_timestamp_unix: i64,
+    los_timestamp_unix: i64,
+    tca_timestamp_unix: i64,
+    max_elevation_deg: f64,
+    aos_azimuth_deg: f64,
+    los_azimuth_deg: f64,
+    duration_seconds: i64,
+}
+
 // HTTP handler for propagation
 async fn propagate_handler(
     State(_state): State<Arc<RwLock<AppState>>>,
@@ -234,6 +276,62 @@ async fn trajectory_handler(
     }
 }
 
+// HTTP handler for visibility pass calculation
+async fn visibility_handler(
+    State(_state): State<Arc<RwLock<AppState>>>,
+    Json(req): Json<VisibilityHttpRequest>,
+) -> Result<Json<VisibilityHttpResponse>, (StatusCode, Json<VisibilityHttpResponse>)> {
+    let ground_station = propagator::GroundStation {
+        id: req.ground_station.id.clone(),
+        name: req.ground_station.name.clone(),
+        latitude_deg: req.ground_station.latitude_deg,
+        longitude_deg: req.ground_station.longitude_deg,
+        altitude_m: req.ground_station.altitude_m,
+        min_elevation_deg: req.ground_station.min_elevation_deg,
+    };
+
+    match propagator::calculate_visibility_passes(
+        &req.tle_line1,
+        &req.tle_line2,
+        &ground_station,
+        req.start_timestamp_unix,
+        req.end_timestamp_unix,
+    ) {
+        Ok(passes) => {
+            let pass_infos: Vec<PassInfo> = passes
+                .into_iter()
+                .map(|p| PassInfo {
+                    aos_timestamp_unix: p.aos_timestamp,
+                    los_timestamp_unix: p.los_timestamp,
+                    tca_timestamp_unix: p.tca_timestamp,
+                    max_elevation_deg: p.max_elevation_deg,
+                    aos_azimuth_deg: p.aos_azimuth_deg,
+                    los_azimuth_deg: p.los_azimuth_deg,
+                    duration_seconds: p.duration_seconds,
+                })
+                .collect();
+
+            Ok(Json(VisibilityHttpResponse {
+                satellite_id: req.satellite_id,
+                ground_station_id: req.ground_station.id,
+                passes: pass_infos,
+                success: true,
+                error: None,
+            }))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(VisibilityHttpResponse {
+                satellite_id: req.satellite_id,
+                ground_station_id: req.ground_station.id,
+                passes: vec![],
+                success: false,
+                error: Some(e.to_string()),
+            }),
+        )),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load .env file if present
@@ -288,6 +386,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route("/health", get(metrics::health_handler))
             .route("/api/propagate", post(propagate_handler))
             .route("/api/trajectory", post(trajectory_handler))
+            .route("/api/visibility", post(visibility_handler))
             .with_state(metrics_state);
 
         let listener = tokio::net::TcpListener::bind(metrics_addr).await.unwrap();

@@ -8,20 +8,29 @@ defmodule StellarData.Commands do
   alias StellarData.Commands.Command
 
   @doc """
-  Creates a new command for a satellite.
+  Creates a new command.
+
+  Accepts a map with command attributes.
+  """
+  def create_command(attrs) when is_map(attrs) do
+    %Command{}
+    |> Command.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Creates a new command for a satellite (legacy signature).
   """
   def create_command(satellite_id, command_type, params \\ %{}, opts \\ []) do
     attrs = %{
       satellite_id: satellite_id,
       command_type: command_type,
       params: params,
-      priority: Keyword.get(opts, :priority, 0),
+      priority: Keyword.get(opts, :priority, 50),
       scheduled_at: Keyword.get(opts, :scheduled_at)
     }
 
-    %Command{}
-    |> Command.changeset(attrs)
-    |> Repo.insert()
+    create_command(attrs)
   end
 
   @doc """
@@ -41,12 +50,33 @@ defmodule StellarData.Commands do
   end
 
   @doc """
-  Gets pending commands for a satellite, ordered by priority and creation time.
+  Lists all active (non-terminal) commands.
+  """
+  def list_active_commands do
+    Command
+    |> where([c], c.status in [:queued, :pending, :acknowledged, :executing])
+    |> order_by([c], [desc: c.priority, asc: c.inserted_at])
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets queued commands for a satellite, ordered by priority and creation time.
+  """
+  def get_queued_commands(satellite_id) do
+    Command
+    |> where([c], c.satellite_id == ^satellite_id)
+    |> where([c], c.status == :queued)
+    |> order_by([c], [desc: c.priority, asc: c.inserted_at])
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets pending commands for a satellite.
   """
   def get_pending_commands(satellite_id) do
     Command
     |> where([c], c.satellite_id == ^satellite_id)
-    |> where([c], c.status == :pending)
+    |> where([c], c.status in [:pending, :acknowledged, :executing])
     |> order_by([c], [desc: c.priority, asc: c.inserted_at])
     |> Repo.all()
   end
@@ -59,7 +89,7 @@ defmodule StellarData.Commands do
 
     Command
     |> where([c], c.satellite_id == ^satellite_id)
-    |> where([c], c.status == :pending)
+    |> where([c], c.status == :queued)
     |> where([c], is_nil(c.scheduled_at) or c.scheduled_at <= ^now)
     |> order_by([c], [desc: c.priority, asc: c.inserted_at])
     |> limit(1)
@@ -67,12 +97,39 @@ defmodule StellarData.Commands do
   end
 
   @doc """
-  Marks a command as running.
+  Updates a command's status by ID.
+  """
+  def update_command_status(command_id, status, result \\ nil) when is_atom(status) do
+    case get_command(command_id) do
+      nil ->
+        {:error, :not_found}
+
+      command ->
+        attrs = %{status: status}
+
+        attrs =
+          case status do
+            :pending -> Map.put(attrs, :sent_at, DateTime.utc_now())
+            :executing -> Map.put(attrs, :started_at, DateTime.utc_now())
+            s when s in [:completed, :failed, :cancelled] ->
+              attrs = Map.put(attrs, :completed_at, DateTime.utc_now())
+              if result, do: Map.put(attrs, :result, result), else: attrs
+            _ -> attrs
+          end
+
+        command
+        |> Command.status_changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Marks a command as running (executing).
   """
   def start_command(%Command{} = command) do
     command
     |> Command.status_changeset(%{
-      status: :running,
+      status: :executing,
       started_at: DateTime.utc_now()
     })
     |> Repo.update()
@@ -84,7 +141,7 @@ defmodule StellarData.Commands do
   def complete_command(%Command{} = command, result \\ %{}) do
     command
     |> Command.status_changeset(%{
-      status: :done,
+      status: :completed,
       completed_at: DateTime.utc_now(),
       result: result
     })
@@ -105,12 +162,12 @@ defmodule StellarData.Commands do
   end
 
   @doc """
-  Cancels a pending command.
+  Cancels a queued or pending command.
   """
   def cancel_command(%Command{} = command) do
     command
     |> Command.status_changeset(%{
-      status: :canceled,
+      status: :cancelled,
       completed_at: DateTime.utc_now()
     })
     |> Repo.update()

@@ -3,7 +3,14 @@ defmodule StellarData.Commands.Command do
   Ecto schema for satellite commands.
 
   Represents commands sent to satellites, tracking their
-  status through the lifecycle: pending -> running -> done/failed/canceled.
+  status through the lifecycle:
+  - queued: Created and waiting in queue
+  - pending: Sent to satellite, awaiting acknowledgment
+  - acknowledged: Satellite confirmed receipt
+  - executing: Currently being executed
+  - completed: Successfully completed
+  - failed: Execution failed
+  - cancelled: Aborted before completion
   """
 
   use Ecto.Schema
@@ -14,13 +21,16 @@ defmodule StellarData.Commands.Command do
   schema "commands" do
     field :command_type, :string
     field :params, :map, default: %{}
+    field :payload, :map, default: %{}
     field :status, Ecto.Enum,
-      values: [:pending, :running, :done, :failed, :canceled],
-      default: :pending
-    field :priority, :integer, default: 0
+      values: [:queued, :pending, :acknowledged, :executing, :completed, :failed, :cancelled],
+      default: :queued
+    field :priority, :integer, default: 50
     field :scheduled_at, :utc_datetime_usec
+    field :sent_at, :utc_datetime_usec
     field :started_at, :utc_datetime_usec
     field :completed_at, :utc_datetime_usec
+    field :timeout_ms, :integer, default: 60_000
     field :result, :map
     field :error_message, :string
 
@@ -32,11 +42,14 @@ defmodule StellarData.Commands.Command do
   @required_fields [:satellite_id, :command_type]
   @optional_fields [
     :params,
+    :payload,
     :status,
     :priority,
     :scheduled_at,
+    :sent_at,
     :started_at,
     :completed_at,
+    :timeout_ms,
     :result,
     :error_message
   ]
@@ -58,7 +71,7 @@ defmodule StellarData.Commands.Command do
   """
   def status_changeset(command, attrs) do
     command
-    |> cast(attrs, [:status, :started_at, :completed_at, :result, :error_message])
+    |> cast(attrs, [:status, :sent_at, :started_at, :completed_at, :result, :error_message])
     |> validate_status_transition(command.status)
   end
 
@@ -70,8 +83,11 @@ defmodule StellarData.Commands.Command do
     end
   end
 
-  defp validate_transition(changeset, :pending, new) when new in [:running, :canceled], do: changeset
-  defp validate_transition(changeset, :running, new) when new in [:done, :failed, :canceled], do: changeset
+  # Valid transitions
+  defp validate_transition(changeset, :queued, new) when new in [:pending, :cancelled], do: changeset
+  defp validate_transition(changeset, :pending, new) when new in [:acknowledged, :failed, :cancelled], do: changeset
+  defp validate_transition(changeset, :acknowledged, new) when new in [:executing, :failed, :cancelled], do: changeset
+  defp validate_transition(changeset, :executing, new) when new in [:completed, :failed], do: changeset
   defp validate_transition(changeset, same, same), do: changeset
   defp validate_transition(changeset, _from, _to) do
     add_error(changeset, :status, "invalid status transition")

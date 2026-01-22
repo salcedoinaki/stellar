@@ -122,6 +122,56 @@ defmodule StellarData.Telemetry do
     |> Repo.delete_all()
   end
 
+  @doc """
+  Creates or updates a telemetry aggregate record.
+
+  Used for storing precomputed statistics per time window.
+  """
+  def create_aggregate(attrs) do
+    # For now, store as a telemetry event with type "aggregate"
+    # In production, you'd have a dedicated aggregates table
+    %TelemetryEvent{}
+    |> TelemetryEvent.changeset(%{
+      satellite_id: attrs.satellite_id,
+      event_type: "aggregate:#{attrs.metric}:#{attrs.window}",
+      data: %{
+        metric: attrs.metric,
+        window: attrs.window,
+        avg: attrs.avg,
+        min: attrs.min,
+        max: attrs.max,
+        count: attrs.count
+      },
+      recorded_at: attrs[:recorded_at] || DateTime.utc_now()
+    })
+    |> Repo.insert()
+  end
+
+  @doc """
+  Gets aggregated statistics for a satellite metric.
+  """
+  def get_aggregates(satellite_id, metric, opts \\ []) do
+    window = Keyword.get(opts, :window)
+    limit = Keyword.get(opts, :limit, 100)
+
+    query =
+      TelemetryEvent
+      |> where([e], e.satellite_id == ^satellite_id)
+      |> where([e], like(e.event_type, ^"aggregate:#{metric}:%"))
+
+    query = if window do
+      where(query, [e], e.event_type == ^"aggregate:#{metric}:#{window}")
+    else
+      query
+    end
+
+    query
+    |> order_by([e], desc: e.recorded_at)
+    |> limit(^limit)
+    |> Repo.all()
+    |> Enum.map(fn event -> event.data end)
+  end
+
   # Private helpers
 
   defp maybe_filter_event_type(query, nil), do: query

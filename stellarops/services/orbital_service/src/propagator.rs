@@ -117,6 +117,219 @@ pub fn propagate_trajectory(
     Ok(results)
 }
 
+/// Ground station location
+#[derive(Debug, Clone)]
+pub struct GroundStation {
+    pub id: String,
+    pub name: String,
+    pub latitude_deg: f64,
+    pub longitude_deg: f64,
+    pub altitude_m: f64,
+    pub min_elevation_deg: f64,
+}
+
+/// Visibility pass information
+#[derive(Debug, Clone)]
+pub struct VisibilityPass {
+    pub aos_timestamp: i64,      // Acquisition of Signal
+    pub los_timestamp: i64,      // Loss of Signal
+    pub tca_timestamp: i64,      // Time of Closest Approach (max elevation)
+    pub max_elevation_deg: f64,
+    pub aos_azimuth_deg: f64,
+    pub los_azimuth_deg: f64,
+    pub duration_seconds: i64,
+}
+
+/// Calculate visibility passes for a satellite over a ground station
+pub fn calculate_visibility_passes(
+    tle_line1: &str,
+    tle_line2: &str,
+    ground_station: &GroundStation,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<VisibilityPass>, PropagationError> {
+    // Parse TLE once
+    let elements = Elements::from_tle(
+        None,
+        tle_line1.as_bytes(),
+        tle_line2.as_bytes(),
+    ).map_err(|e| PropagationError::TleParseError(format!("{:?}", e)))?;
+
+    let constants = Constants::from_elements(&elements)
+        .map_err(|e| PropagationError::PropagatorError(format!("{:?}", e)))?;
+
+    let tle_epoch_unix = tle_epoch_to_unix(&elements);
+
+    // Convert ground station position to ECEF
+    let gs_ecef = geodetic_to_ecef(
+        ground_station.latitude_deg,
+        ground_station.longitude_deg,
+        ground_station.altitude_m / 1000.0, // Convert to km
+    );
+
+    let mut passes = Vec::new();
+    let step_seconds: i64 = 30; // Check every 30 seconds for passes
+    
+    let mut in_pass = false;
+    let mut current_pass_start: i64 = 0;
+    let mut current_pass_start_azimuth: f64 = 0.0;
+    let mut max_elevation: f64 = 0.0;
+    let mut tca_timestamp: i64 = 0;
+
+    let mut timestamp = start_unix;
+    while timestamp <= end_unix {
+        let minutes_since_epoch = (timestamp as f64 - tle_epoch_unix) / 60.0;
+
+        if let Ok(prediction) = constants.propagate(minutes_since_epoch) {
+            // Calculate elevation and azimuth from ground station
+            let (elevation, azimuth) = calculate_look_angles(
+                &prediction.position,
+                &gs_ecef,
+                ground_station.latitude_deg,
+                ground_station.longitude_deg,
+                timestamp,
+            );
+
+            let above_horizon = elevation >= ground_station.min_elevation_deg;
+
+            if above_horizon && !in_pass {
+                // Start of new pass
+                in_pass = true;
+                current_pass_start = timestamp;
+                current_pass_start_azimuth = azimuth;
+                max_elevation = elevation;
+                tca_timestamp = timestamp;
+            } else if above_horizon && in_pass {
+                // Update max elevation
+                if elevation > max_elevation {
+                    max_elevation = elevation;
+                    tca_timestamp = timestamp;
+                }
+            } else if !above_horizon && in_pass {
+                // End of pass
+                in_pass = false;
+                
+                // Re-calculate end azimuth
+                let (_, end_azimuth) = calculate_look_angles(
+                    &prediction.position,
+                    &gs_ecef,
+                    ground_station.latitude_deg,
+                    ground_station.longitude_deg,
+                    timestamp - step_seconds,
+                );
+
+                passes.push(VisibilityPass {
+                    aos_timestamp: current_pass_start,
+                    los_timestamp: timestamp,
+                    tca_timestamp,
+                    max_elevation_deg: max_elevation,
+                    aos_azimuth_deg: current_pass_start_azimuth,
+                    los_azimuth_deg: end_azimuth,
+                    duration_seconds: timestamp - current_pass_start,
+                });
+            }
+        }
+
+        timestamp += step_seconds;
+    }
+
+    // Handle pass that extends beyond time window
+    if in_pass {
+        passes.push(VisibilityPass {
+            aos_timestamp: current_pass_start,
+            los_timestamp: end_unix,
+            tca_timestamp,
+            max_elevation_deg: max_elevation,
+            aos_azimuth_deg: current_pass_start_azimuth,
+            los_azimuth_deg: 0.0, // Unknown
+            duration_seconds: end_unix - current_pass_start,
+        });
+    }
+
+    debug!("Found {} visibility passes", passes.len());
+    Ok(passes)
+}
+
+/// Convert geodetic coordinates to ECEF
+fn geodetic_to_ecef(lat_deg: f64, lon_deg: f64, alt_km: f64) -> [f64; 3] {
+    let lat_rad = lat_deg.to_radians();
+    let lon_rad = lon_deg.to_radians();
+
+    // WGS84 parameters
+    let a = 6378.137; // Equatorial radius in km
+    let f = 1.0 / 298.257223563;
+    let e2 = 2.0 * f - f * f;
+
+    let sin_lat = lat_rad.sin();
+    let cos_lat = lat_rad.cos();
+    let sin_lon = lon_rad.sin();
+    let cos_lon = lon_rad.cos();
+
+    let n = a / (1.0 - e2 * sin_lat * sin_lat).sqrt();
+
+    let x = (n + alt_km) * cos_lat * cos_lon;
+    let y = (n + alt_km) * cos_lat * sin_lon;
+    let z = (n * (1.0 - e2) + alt_km) * sin_lat;
+
+    [x, y, z]
+}
+
+/// Calculate look angles (elevation, azimuth) from ground station to satellite
+fn calculate_look_angles(
+    sat_eci: &[f64; 3],
+    gs_ecef: &[f64; 3],
+    gs_lat_deg: f64,
+    gs_lon_deg: f64,
+    timestamp_unix: i64,
+) -> (f64, f64) {
+    // Convert satellite ECI to ECEF
+    let gmst = calculate_gmst(timestamp_unix);
+    let cos_gmst = gmst.cos();
+    let sin_gmst = gmst.sin();
+
+    let sat_ecef = [
+        sat_eci[0] * cos_gmst + sat_eci[1] * sin_gmst,
+        -sat_eci[0] * sin_gmst + sat_eci[1] * cos_gmst,
+        sat_eci[2],
+    ];
+
+    // Vector from ground station to satellite in ECEF
+    let range_ecef = [
+        sat_ecef[0] - gs_ecef[0],
+        sat_ecef[1] - gs_ecef[1],
+        sat_ecef[2] - gs_ecef[2],
+    ];
+
+    // Convert to topocentric coordinates (SEZ - South, East, Zenith)
+    let lat_rad = gs_lat_deg.to_radians();
+    let lon_rad = gs_lon_deg.to_radians();
+
+    let sin_lat = lat_rad.sin();
+    let cos_lat = lat_rad.cos();
+    let sin_lon = lon_rad.sin();
+    let cos_lon = lon_rad.cos();
+
+    // Rotation matrix ECEF to SEZ
+    let s = sin_lat * cos_lon * range_ecef[0] + sin_lat * sin_lon * range_ecef[1] - cos_lat * range_ecef[2];
+    let e = -sin_lon * range_ecef[0] + cos_lon * range_ecef[1];
+    let z = cos_lat * cos_lon * range_ecef[0] + cos_lat * sin_lon * range_ecef[1] + sin_lat * range_ecef[2];
+
+    let range = (s * s + e * e + z * z).sqrt();
+
+    // Elevation angle
+    let elevation_rad = (z / range).asin();
+    let elevation_deg = elevation_rad.to_degrees();
+
+    // Azimuth angle (from North, clockwise)
+    let azimuth_rad = (-s).atan2(e);
+    let mut azimuth_deg = azimuth_rad.to_degrees();
+    if azimuth_deg < 0.0 {
+        azimuth_deg += 360.0;
+    }
+
+    (elevation_deg, azimuth_deg)
+}
+
 /// Convert TLE epoch to Unix timestamp
 fn tle_epoch_to_unix(elements: &Elements) -> f64 {
     // TLE epoch is in UTC

@@ -58,6 +58,14 @@ defmodule StellarWeb.Router do
     post "/alarms/:id/acknowledge", AlarmController, :acknowledge
     post "/alarms/:id/resolve", AlarmController, :resolve
     delete "/alarms/resolved", AlarmController, :clear_resolved
+
+    # Command endpoints
+    get "/satellites/:satellite_id/commands", CommandController, :index
+    get "/satellites/:satellite_id/commands/queue", CommandController, :queue
+    get "/satellites/:satellite_id/commands/counts", CommandController, :counts
+    post "/satellites/:satellite_id/commands", CommandController, :create
+    get "/commands/:id", CommandController, :show
+    post "/commands/:id/cancel", CommandController, :cancel
   end
 
   # Health check endpoint

@@ -1,14 +1,26 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useSatelliteStore } from '../store/satelliteStore'
+import type { ConnectionState } from '../services/socket'
 
 interface LayoutProps {
   children: React.ReactNode
+  connectionState?: ConnectionState
+  isConnected?: boolean
 }
 
-export default function Layout({ children }: LayoutProps) {
+const connectionStateConfig: Record<ConnectionState, { color: string; label: string; animate?: boolean }> = {
+  connected: { color: 'bg-green-500', label: 'Connected' },
+  connecting: { color: 'bg-yellow-500', label: 'Connecting...', animate: true },
+  reconnecting: { color: 'bg-orange-500', label: 'Reconnecting...', animate: true },
+  disconnected: { color: 'bg-red-500', label: 'Disconnected' },
+}
+
+export default function Layout({ children, connectionState = 'disconnected', isConnected = false }: LayoutProps) {
   const location = useLocation()
-  const { satellites, isConnected } = useSatelliteStore()
+  const { satellites } = useSatelliteStore()
   const satelliteCount = satellites.size
+  
+  const connectionConfig = connectionStateConfig[connectionState]
 
   const navLinks = [
     { path: '/', label: 'Dashboard', icon: '📊' },
@@ -18,6 +30,25 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">
+      {/* Connection warning banner */}
+      {connectionState === 'reconnecting' && (
+        <div className="bg-orange-600 text-white text-center py-2 text-sm">
+          <span className="inline-flex items-center gap-2">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Reconnecting to server...
+          </span>
+        </div>
+      )}
+      
+      {connectionState === 'disconnected' && (
+        <div className="bg-red-600 text-white text-center py-2 text-sm">
+          <span>Connection lost. Data may be stale.</span>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -54,12 +85,12 @@ export default function Layout({ children }: LayoutProps) {
               </div>
               <div className="flex items-center gap-2">
                 <div
-                  className={`w-2 h-2 rounded-full ${
-                    isConnected ? 'bg-green-500' : 'bg-red-500'
+                  className={`w-2 h-2 rounded-full ${connectionConfig.color} ${
+                    connectionConfig.animate ? 'animate-pulse' : ''
                   }`}
                 />
                 <span className="text-xs text-slate-400">
-                  {isConnected ? 'Connected' : 'Disconnected'}
+                  {connectionConfig.label}
                 </span>
               </div>
             </div>
