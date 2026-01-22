@@ -40,6 +40,199 @@ defmodule StellarCore.COAPlanner do
   @default_mass 500.0       # kg - satellite mass
   @default_fuel 50.0        # kg - available fuel
 
+  # ============================================================================
+  # Public Orbital Mechanics Functions (for testing)
+  # ============================================================================
+
+  @doc """
+  Calculates orbital velocity using vis-viva equation.
+
+  v = sqrt(mu * (2/r - 1/a))
+
+  Where:
+  - r: current radius from Earth center (km)
+  - a: semi-major axis (km)
+  - mu: gravitational parameter (km³/s²)
+  """
+  def vis_viva(r, a, mu \\ @earth_mu) do
+    :math.sqrt(mu * (2 / r - 1 / a))
+  end
+
+  @doc """
+  Calculates delta-V for Hohmann transfer between two circular orbits.
+
+  Returns {dv1, dv2} for the two burns.
+  """
+  def hohmann_dv(r1, r2, mu \\ @earth_mu) do
+    # Transfer orbit semi-major axis
+    a_transfer = (r1 + r2) / 2
+
+    # Velocities at departure and arrival
+    v1_circular = :math.sqrt(mu / r1)
+    v2_circular = :math.sqrt(mu / r2)
+
+    # Velocities in transfer orbit at periapsis and apoapsis
+    v1_transfer = :math.sqrt(mu * (2 / r1 - 1 / a_transfer))
+    v2_transfer = :math.sqrt(mu * (2 / r2 - 1 / a_transfer))
+
+    dv1 = abs(v1_transfer - v1_circular)
+    dv2 = abs(v2_circular - v2_transfer)
+
+    {dv1, dv2}
+  end
+
+  @doc """
+  Calculates delta-V for inclination change.
+
+  dv = 2 * v * sin(di/2)
+  """
+  def inclination_change_dv(velocity, delta_i_degrees) do
+    delta_i_rad = delta_i_degrees * :math.pi() / 180.0
+    2 * velocity * :math.sin(delta_i_rad / 2)
+  end
+
+  @doc """
+  Calculates fuel consumption using Tsiolkovsky rocket equation.
+
+  m_fuel = m0 * (1 - e^(-dv / ve))
+  where ve = Isp * g0
+  """
+  def estimate_fuel(delta_v, spacecraft_mass, isp \\ @default_isp) do
+    g0 = 0.00981  # km/s²
+    ve = isp * g0
+
+    spacecraft_mass * (1 - :math.exp(-delta_v / ve))
+  end
+
+  @doc """
+  Estimates burn duration based on thrust and mass.
+  """
+  def estimate_burn_duration(delta_v_km_s, thrust_n, mass_kg) do
+    # a = F/m, t = dv/a
+    delta_v_m_s = delta_v_km_s * 1000
+    acceleration = thrust_n / mass_kg
+    delta_v_m_s / acceleration
+  end
+
+  @doc """
+  Calculates risk score for a COA.
+
+  Factors:
+  - Fuel consumption (30%)
+  - Time to TCA (40%)
+  - Improvement factor (30%)
+  """
+  def calculate_risk_score(fuel_kg, time_to_tca_seconds, improvement_factor) do
+    # Normalize fuel (assume 50kg max)
+    fuel_score = min(fuel_kg / @default_fuel * 100, 100)
+
+    # Time score (more time = lower risk)
+    time_score = cond do
+      time_to_tca_seconds < 3600 -> 100.0
+      time_to_tca_seconds < 7200 -> 80.0
+      time_to_tca_seconds < 14400 -> 60.0
+      time_to_tca_seconds < 43200 -> 40.0
+      time_to_tca_seconds < 86400 -> 20.0
+      true -> 10.0
+    end
+
+    # Improvement score (higher improvement = lower risk)
+    improvement_score = (1 - improvement_factor) * 100
+
+    fuel_score * 0.3 + time_score * 0.4 + improvement_score * 0.3
+  end
+
+  @doc """
+  Builds a retrograde burn COA from conjunction and orbit data.
+  """
+  def build_retrograde_coa(conjunction, satellite_orbit) do
+    altitude = (satellite_orbit["a"] || 6771.0) - @earth_radius
+    velocity = :math.sqrt(@earth_mu / (altitude + @earth_radius))
+
+    # Target: lower by 10 km
+    target_r = altitude + @earth_radius - 10.0
+    target_v = :math.sqrt(@earth_mu / target_r)
+    delta_v = abs(velocity - target_v)
+
+    fuel_kg = estimate_fuel(delta_v, conjunction.asset.mass_kg || @default_mass)
+    time_to_tca = DateTime.diff(conjunction.tca, DateTime.utc_now(), :second)
+    improvement = 0.7
+
+    %{
+      conjunction_id: conjunction.id,
+      type: :retrograde_burn,
+      name: "Retrograde Burn",
+      objective: "Lower orbit to change timing",
+      delta_v_magnitude: Float.round(delta_v, 4),
+      delta_v_direction: %{"x" => -1.0, "y" => 0.0, "z" => 0.0},
+      burn_start_time: DateTime.add(conjunction.tca, -3600, :second),
+      burn_duration_seconds: delta_v * 1000 / 0.1,
+      estimated_fuel_kg: Float.round(fuel_kg, 3),
+      predicted_miss_distance_km: conjunction.miss_distance_km + 5.0,
+      risk_score: calculate_risk_score(fuel_kg, time_to_tca, improvement),
+      pre_burn_orbit: satellite_orbit,
+      post_burn_orbit: Map.put(satellite_orbit, "a", target_r),
+      status: :proposed
+    }
+  end
+
+  @doc """
+  Builds an inclination change COA.
+  """
+  def build_inclination_change_coa(conjunction, satellite_orbit) do
+    altitude = (satellite_orbit["a"] || 6771.0) - @earth_radius
+    velocity = :math.sqrt(@earth_mu / (altitude + @earth_radius))
+
+    delta_i = 0.1  # degrees
+    delta_v = inclination_change_dv(velocity, delta_i)
+
+    fuel_kg = estimate_fuel(delta_v, conjunction.asset.mass_kg || @default_mass)
+    time_to_tca = DateTime.diff(conjunction.tca, DateTime.utc_now(), :second)
+
+    new_i = (satellite_orbit["i"] || 45.0) + delta_i
+
+    %{
+      conjunction_id: conjunction.id,
+      type: :inclination_change,
+      name: "Inclination Change",
+      objective: "Change orbital plane",
+      delta_v_magnitude: Float.round(delta_v, 4),
+      delta_v_direction: %{"x" => 0.0, "y" => 0.0, "z" => 1.0},
+      burn_start_time: DateTime.add(conjunction.tca, -7200, :second),
+      burn_duration_seconds: delta_v * 1000 / 0.1,
+      estimated_fuel_kg: Float.round(fuel_kg, 3),
+      predicted_miss_distance_km: conjunction.miss_distance_km + 20.0,
+      risk_score: calculate_risk_score(fuel_kg, time_to_tca, 0.9),
+      pre_burn_orbit: satellite_orbit,
+      post_burn_orbit: Map.put(satellite_orbit, "i", new_i),
+      status: :proposed
+    }
+  end
+
+  @doc """
+  Builds a station keeping COA (no maneuver).
+  """
+  def build_station_keeping_coa(conjunction, satellite_orbit) do
+    time_to_tca = DateTime.diff(conjunction.tca, DateTime.utc_now(), :second)
+
+    %{
+      conjunction_id: conjunction.id,
+      type: :station_keeping,
+      name: "Station Keeping",
+      objective: "Maintain current orbit",
+      delta_v_magnitude: 0.0,
+      delta_v_direction: %{"x" => 0.0, "y" => 0.0, "z" => 0.0},
+      burn_start_time: nil,
+      burn_duration_seconds: 0.0,
+      estimated_fuel_kg: 0.0,
+      predicted_miss_distance_km: conjunction.miss_distance_km,
+      risk_score: calculate_risk_score(0.0, time_to_tca, 0.0),
+      pre_burn_orbit: satellite_orbit,
+      post_burn_orbit: satellite_orbit,
+      status: :proposed
+    }
+  end
+
   # TASK-315: Generate COAs for a conjunction
   @doc """
   Generates a list of COAs for a given conjunction.
