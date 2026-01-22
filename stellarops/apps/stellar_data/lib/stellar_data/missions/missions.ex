@@ -205,6 +205,37 @@ defmodule StellarData.Missions do
     end
   end
 
+  @doc """
+  Retries a failed mission.
+  """
+  def retry_mission(%Mission{status: :failed, retry_count: count, max_retries: max} = mission)
+      when count < max do
+    mission
+    |> Mission.changeset(%{
+      status: :pending,
+      retry_count: count + 1,
+      error_message: nil,
+      next_retry_at: nil
+    })
+    |> Repo.update()
+  end
+
+  def retry_mission(%Mission{status: :failed, retry_count: count, max_retries: max})
+      when count >= max do
+    {:error, :max_retries_exceeded}
+  end
+
+  def retry_mission(%Mission{status: status}) when status != :failed do
+    {:error, :invalid_status}
+  end
+
+  def retry_mission(id) when is_binary(id) do
+    case get_mission(id) do
+      nil -> {:error, :not_found}
+      mission -> retry_mission(mission)
+    end
+  end
+
   # ============================================================================
   # Query Helpers
   # ============================================================================

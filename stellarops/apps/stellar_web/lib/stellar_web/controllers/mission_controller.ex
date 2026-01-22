@@ -64,6 +64,28 @@ defmodule StellarWeb.MissionController do
   end
 
   @doc """
+  POST /api/missions/:id/retry
+  Retry a failed mission.
+  """
+  def retry(conn, %{"id" => id}) do
+    with mission when not is_nil(mission) <- Missions.get_mission(id),
+         {:ok, updated} <- Missions.retry_mission(mission) do
+      render(conn, :show, mission: updated)
+    else
+      nil -> {:error, :not_found}
+      {:error, :max_retries_exceeded} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Maximum retries exceeded"})
+      {:error, :invalid_status} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Mission cannot be retried in current status"})
+      {:error, reason} -> {:error, {:unprocessable_entity, reason}}
+    end
+  end
+
+  @doc """
   GET /api/missions/stats
   Get mission statistics.
   """

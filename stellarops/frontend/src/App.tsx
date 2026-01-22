@@ -5,6 +5,8 @@ import SatelliteList from './pages/SatelliteList'
 import SatelliteDetail from './pages/SatelliteDetail'
 import MapView from './pages/MapView'
 import SSADashboard from './pages/SSADashboard'
+import AlarmDashboard from './pages/AlarmDashboard'
+import MissionDashboard from './pages/MissionDashboard'
 import { useSocketConnection } from './hooks'
 
 function App() {
@@ -19,6 +21,8 @@ function App() {
         <Route path="/satellites/:id" element={<SatelliteDetail />} />
         <Route path="/map" element={<MapView />} />
         <Route path="/ssa" element={<SSADashboard />} />
+        <Route path="/alarms" element={<AlarmDashboard />} />
+        <Route path="/missions" element={<MissionDashboard />} />
       </Routes>
     </Layout>
   )

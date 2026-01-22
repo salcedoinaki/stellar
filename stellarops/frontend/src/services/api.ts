@@ -385,6 +385,134 @@ export async function generateCOAs(conjunctionId: string): Promise<CourseOfActio
 }
 
 // ============================================================================
+// Alarms API
+// ============================================================================
+
+import type { Alarm, AlarmSeverity, AlarmStatus, Mission, MissionStatus, MissionPriority } from '../types'
+
+export interface AlarmFilters {
+  severity?: AlarmSeverity
+  status?: AlarmStatus
+  source?: string
+  satellite_id?: string
+  limit?: number
+}
+
+export async function fetchAlarms(filters?: AlarmFilters): Promise<Alarm[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/alarms${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<Alarm[]>>(response)
+  return data.data
+}
+
+export async function fetchAlarm(id: string): Promise<Alarm> {
+  const response = await fetch(`${API_BASE}/api/alarms/${id}`)
+  const data = await handleResponse<ApiResponse<Alarm>>(response)
+  return data.data
+}
+
+export async function acknowledgeAlarm(id: string): Promise<Alarm> {
+  const response = await fetch(`${API_BASE}/api/alarms/${id}/acknowledge`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<Alarm>>(response)
+  return data.data
+}
+
+export async function resolveAlarm(id: string): Promise<Alarm> {
+  const response = await fetch(`${API_BASE}/api/alarms/${id}/resolve`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<Alarm>>(response)
+  return data.data
+}
+
+export async function fetchAlarmSummary(): Promise<{
+  total: number
+  by_severity: Record<AlarmSeverity, number>
+  by_status: Record<AlarmStatus, number>
+}> {
+  const response = await fetch(`${API_BASE}/api/alarms/summary`)
+  const data = await handleResponse<{ data: { total: number; by_severity: Record<AlarmSeverity, number>; by_status: Record<AlarmStatus, number> } }>(response)
+  return data.data
+}
+
+// ============================================================================
+// Missions API
+// ============================================================================
+
+export interface MissionFilters {
+  status?: MissionStatus
+  priority?: MissionPriority
+  satellite_id?: string
+  limit?: number
+}
+
+export async function fetchMissions(filters?: MissionFilters): Promise<Mission[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/missions${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<Mission[]>>(response)
+  return data.data
+}
+
+export async function fetchMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}`)
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function createMission(mission: {
+  name?: string
+  type: string
+  satellite_id?: string
+  priority?: MissionPriority
+  deadline?: string
+  payload?: object
+}): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mission }),
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function cancelMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}/cancel`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function retryMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}/retry`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+// ============================================================================
 // API Client Object
 // ============================================================================
 
@@ -440,6 +568,31 @@ export const api = {
     reject: rejectCOA,
     generate: generateCOAs,
   },
+  alarms: {
+    list: fetchAlarms,
+    get: fetchAlarm,
+    acknowledge: acknowledgeAlarm,
+    resolve: resolveAlarm,
+    summary: fetchAlarmSummary,
+  },
+  missions: {
+    list: fetchMissions,
+    get: fetchMission,
+    create: createMission,
+    cancel: cancelMission,
+    retry: retryMission,
+  },
+  // Legacy direct access
+  getSatellites: fetchSatellites,
+  getSatellite: fetchSatellite,
+  getAlarms: fetchAlarms,
+  acknowledgeAlarm: acknowledgeAlarm,
+  resolveAlarm: resolveAlarm,
+  getMissions: fetchMissions,
+  getMission: fetchMission,
+  createMission: createMission,
+  cancelMission: cancelMission,
+  retryMission: retryMission,
 }
 
 export default api

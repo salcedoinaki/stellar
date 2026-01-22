@@ -39,6 +39,8 @@ defmodule StellarWeb.Router do
     get "/missions/:id", MissionController, :show
     post "/missions", MissionController, :create
     patch "/missions/:id/cancel", MissionController, :cancel
+    post "/missions/:id/cancel", MissionController, :cancel
+    post "/missions/:id/retry", MissionController, :retry
 
     # Ground Station endpoints (Phase 11)
     get "/ground_stations", GroundStationController, :index

@@ -141,33 +141,36 @@ export type GroundStationStatus = 'online' | 'offline' | 'maintenance'
 // Mission types
 export interface Mission {
   id: string
-  name: string
+  name?: string
   description?: string
-  type: MissionType
-  satellite_id: string
+  type: string
+  satellite_id: string | null
   ground_station_id?: string
   priority: MissionPriority
   status: MissionStatus
-  deadline?: string
-  scheduled_at?: string
-  started_at?: string
-  completed_at?: string
-  required_energy: number
-  required_memory: number
-  required_bandwidth: number
-  estimated_duration: number
+  deadline?: string | null
+  scheduled_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  energy_required?: number
+  memory_required?: number
+  required_energy?: number
+  required_memory?: number
+  required_bandwidth?: number
+  estimated_duration?: number
   retry_count: number
   max_retries: number
+  error_message?: string | null
   last_error?: string
   payload?: Record<string, unknown>
   result?: Record<string, unknown>
   inserted_at: string
-  updated_at: string
+  updated_at?: string
 }
 
-export type MissionType = 'imaging' | 'data_collection' | 'orbit_adjust' | 'downlink' | 'maintenance'
+export type MissionType = 'imaging' | 'data_collection' | 'orbit_adjust' | 'downlink' | 'maintenance' | 'telemetry' | 'communication' | 'maneuver'
 export type MissionPriority = 'critical' | 'high' | 'normal' | 'low'
-export type MissionStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'failed' | 'canceled'
+export type MissionStatus = 'pending' | 'scheduled' | 'running' | 'completed' | 'failed' | 'cancelled' | 'canceled'
 
 // Alarm types
 export interface Alarm {
