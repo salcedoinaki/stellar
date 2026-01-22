@@ -9,15 +9,13 @@ interface SatelliteCardProps {
 const modeColors: Record<SatelliteMode, string> = {
   nominal: 'bg-green-500',
   safe: 'bg-yellow-500',
-  critical: 'bg-red-500',
-  standby: 'bg-blue-500',
+  survival: 'bg-red-500',
 }
 
 const modeLabels: Record<SatelliteMode, string> = {
   nominal: 'Nominal',
   safe: 'Safe Mode',
-  critical: 'Critical',
-  standby: 'Standby',
+  survival: 'Survival',
 }
 
 export default function SatelliteCard({ satellite, compact = false }: SatelliteCardProps) {
