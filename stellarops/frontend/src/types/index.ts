@@ -206,3 +206,223 @@ export interface ContactWindow {
 }
 
 export type ContactWindowStatus = 'scheduled' | 'active' | 'completed' | 'missed'
+
+// ============================================
+// Space Situational Awareness (SSA) Types
+// ============================================
+
+// Space Object (tracked objects in orbit)
+export interface SpaceObject {
+  id: string
+  norad_id: number
+  name: string
+  international_designator?: string
+  object_type: SpaceObjectType
+  owner?: string
+  status: SpaceObjectStatus
+  orbit_type: OrbitType
+  orbital_parameters: OrbitalParameters
+  tle: TLEData
+  threat_assessment: ThreatAssessment
+  physical_characteristics: PhysicalCharacteristics
+  tracking: TrackingInfo
+  is_protected_asset: boolean
+  satellite_id?: string
+  notes?: string
+  inserted_at: string
+  updated_at: string
+}
+
+export type SpaceObjectType = 'satellite' | 'debris' | 'rocket_body' | 'payload' | 'unknown'
+export type SpaceObjectStatus = 'active' | 'inactive' | 'decayed' | 'unknown'
+export type OrbitType = 'leo' | 'meo' | 'geo' | 'heo' | 'sso' | 'polar' | 'equatorial' | 'unknown'
+
+export interface OrbitalParameters {
+  inclination_deg?: number
+  apogee_km?: number
+  perigee_km?: number
+  period_minutes?: number
+  semi_major_axis_km?: number
+  eccentricity?: number
+  raan_deg?: number
+  arg_perigee_deg?: number
+  mean_anomaly_deg?: number
+  mean_motion?: number
+  bstar_drag?: number
+}
+
+export interface TLEData {
+  line1?: string
+  line2?: string
+  epoch?: string
+  updated_at?: string
+}
+
+export interface ThreatAssessment {
+  threat_level: ThreatLevel
+  classification: SecurityClassification
+  capabilities: string[]
+  intel_summary?: string
+}
+
+export type ThreatLevel = 'none' | 'low' | 'medium' | 'high' | 'critical'
+export type SecurityClassification = 'unclassified' | 'confidential' | 'secret' | 'top_secret'
+
+export interface PhysicalCharacteristics {
+  radar_cross_section?: number
+  size_class?: string
+  launch_date?: string
+  launch_site?: string
+}
+
+export interface TrackingInfo {
+  last_observed_at?: string
+  observation_count: number
+  data_source?: string
+}
+
+// Conjunction (close approach event)
+export interface Conjunction {
+  id: string
+  tca: string  // Time of Closest Approach
+  tca_uncertainty_seconds: number
+  miss_distance: MissDistance
+  relative_velocity_ms?: number
+  collision_probability?: number
+  pc_method?: string
+  severity: ConjunctionSeverity
+  status: ConjunctionStatus
+  primary_object?: SpaceObjectSummary
+  secondary_object?: SpaceObjectSummary
+  satellite_id?: string
+  recommended_coa_id?: string
+  executed_maneuver_id?: string
+  data_source?: string
+  cdm_id?: string
+  screening_date?: string
+  last_updated?: string
+  notes?: string
+  inserted_at: string
+  updated_at: string
+}
+
+export interface MissDistance {
+  total_m: number
+  radial_m?: number
+  in_track_m?: number
+  cross_track_m?: number
+  uncertainty_m?: number
+}
+
+export type ConjunctionSeverity = 'low' | 'medium' | 'high' | 'critical'
+export type ConjunctionStatus = 'predicted' | 'active' | 'monitoring' | 'avoided' | 'passed' | 'maneuver_executed'
+
+export interface SpaceObjectSummary {
+  id: string
+  norad_id: number
+  name: string
+  object_type: SpaceObjectType
+  owner?: string
+  threat_level: ThreatLevel
+}
+
+// Course of Action (COA)
+export interface CourseOfAction {
+  id: string
+  coa_type: COAType
+  priority: COAPriority
+  status: COAStatus
+  title: string
+  description?: string
+  rationale?: string
+  conjunction_id?: string
+  satellite_id: string
+  maneuver: ManeuverParameters
+  post_maneuver: PostManeuverPrediction
+  scores: COAScores
+  decision: DecisionInfo
+  execution: ExecutionInfo
+  risks: string[]
+  assumptions: string[]
+  alternative_coa_ids: string[]
+  inserted_at: string
+  updated_at: string
+}
+
+export type COAType = 'avoidance_maneuver' | 'monitor' | 'alert' | 'defensive_posture' | 'no_action'
+export type COAPriority = 'low' | 'medium' | 'high' | 'critical'
+export type COAStatus = 'proposed' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed' | 'superseded'
+
+export interface ManeuverParameters {
+  time?: string
+  delta_v_ms?: number
+  delta_v_radial_ms?: number
+  delta_v_in_track_ms?: number
+  delta_v_cross_track_ms?: number
+  burn_duration_s?: number
+  fuel_cost_kg?: number
+}
+
+export interface PostManeuverPrediction {
+  miss_distance_m?: number
+  collision_probability?: number
+  new_orbit_apogee_km?: number
+  new_orbit_perigee_km?: number
+}
+
+export interface COAScores {
+  risk_if_no_action?: number
+  effectiveness?: number
+  mission_impact?: number
+  overall?: number
+}
+
+export interface DecisionInfo {
+  deadline?: string
+  decided_by?: string
+  decided_at?: string
+  notes?: string
+}
+
+export interface ExecutionInfo {
+  command_id?: string
+  started_at?: string
+  completed_at?: string
+  result?: Record<string, unknown>
+}
+
+// SSA Statistics
+export interface ConjunctionStatistics {
+  total_upcoming: number
+  critical_next_24h: number
+  critical_next_7d: number
+  maneuvers_pending: number
+  by_severity: Record<ConjunctionSeverity, number>
+  by_status: Record<ConjunctionStatus, number>
+}
+
+export interface SpaceObjectCounts {
+  by_type: Record<SpaceObjectType, number>
+  by_threat: Record<ThreatLevel, number>
+}
+
+// SSA Detector Status
+export interface DetectorStatus {
+  screening_interval_ms: number
+  prediction_window_hours: number
+  miss_distance_threshold_m: number
+  last_screening_at?: string
+  conjunctions_found: number
+  screening_in_progress: boolean
+}
+
+// Visibility Pass (for ground contact)
+export interface VisibilityPass {
+  aos_time: string
+  los_time: string
+  tca_time: string
+  max_elevation_deg: number
+  aos_azimuth_deg: number
+  los_azimuth_deg: number
+  duration_seconds: number
+}

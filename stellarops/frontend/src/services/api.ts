@@ -1,4 +1,15 @@
-import type { Satellite, TelemetryEvent, Command, ApiResponse, PropagationResult } from '../types'
+import type { 
+  Satellite, 
+  TelemetryEvent, 
+  Command, 
+  ApiResponse, 
+  PropagationResult,
+  SpaceObject,
+  Conjunction,
+  CourseOfAction,
+  ConjunctionStatistics,
+  DetectorStatus,
+} from '../types'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 

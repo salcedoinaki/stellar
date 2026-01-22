@@ -99,6 +99,21 @@ defmodule StellarWeb.Router do
     post "/conjunctions/screen_satellite/:satellite_id", ConjunctionController, :screen_satellite
     get "/conjunctions/:id", ConjunctionController, :show
     put "/conjunctions/:id/status", ConjunctionController, :update_status
+
+    # Course of Action (COA) recommendations
+    get "/coas", COAController, :index
+    get "/coas/pending", COAController, :pending
+    get "/coas/urgent", COAController, :urgent
+    get "/coas/status_counts", COAController, :status_counts
+    get "/coas/planner_status", COAController, :planner_status
+    get "/coas/satellite/:satellite_id", COAController, :for_satellite
+    get "/coas/conjunction/:conjunction_id", COAController, :for_conjunction
+    get "/coas/conjunction/:conjunction_id/recommended", COAController, :recommended
+    post "/coas/conjunction/:conjunction_id/generate", COAController, :generate
+    post "/coas/conjunction/:conjunction_id/plan_maneuver", COAController, :plan_maneuver
+    get "/coas/:id", COAController, :show
+    post "/coas/:id/approve", COAController, :approve
+    post "/coas/:id/reject", COAController, :reject
   end
 
   # Health check endpoint

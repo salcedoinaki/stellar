@@ -16,6 +16,8 @@ defmodule StellarCore.Application do
   - TLE.RefreshService (for periodic TLE updates)
   - Telemetry.Ingestion (for telemetry data processing)
   - Telemetry.Aggregator (for telemetry statistics and trends)
+  - SSA.ConjunctionDetector (for collision threat detection)
+  - SSA.COAPlanner (for course of action recommendations)
   """
 
   use Application
@@ -31,6 +33,8 @@ defmodule StellarCore.Application do
   alias StellarCore.TLE.RefreshService
   alias StellarCore.Telemetry.Ingestion, as: TelemetryIngestion
   alias StellarCore.Telemetry.Aggregator, as: TelemetryAggregator
+  alias StellarCore.SSA.ConjunctionDetector
+  alias StellarCore.SSA.COAPlanner
   alias StellarCore.Alarms
 
   @impl true
@@ -63,6 +67,10 @@ defmodule StellarCore.Application do
       # Telemetry processing
       TelemetryIngestion,
       TelemetryAggregator,
+      
+      # Space Situational Awareness (SSA)
+      ConjunctionDetector,
+      COAPlanner,
       
       # TLE refresh (optional, can be disabled via config)
       {RefreshService, enabled: tle_refresh_enabled?()}
