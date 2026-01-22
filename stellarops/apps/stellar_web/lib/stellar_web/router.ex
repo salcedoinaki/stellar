@@ -66,6 +66,39 @@ defmodule StellarWeb.Router do
     post "/satellites/:satellite_id/commands", CommandController, :create
     get "/commands/:id", CommandController, :show
     post "/commands/:id/cancel", CommandController, :cancel
+
+    # Space Objects (SSA catalog)
+    get "/space_objects", SpaceObjectController, :index
+    get "/space_objects/search", SpaceObjectController, :search
+    get "/space_objects/high_threat", SpaceObjectController, :high_threat
+    get "/space_objects/protected_assets", SpaceObjectController, :protected_assets
+    get "/space_objects/debris", SpaceObjectController, :debris
+    get "/space_objects/stale_tle", SpaceObjectController, :stale_tle
+    get "/space_objects/counts/by_type", SpaceObjectController, :counts_by_type
+    get "/space_objects/counts/by_threat", SpaceObjectController, :counts_by_threat
+    get "/space_objects/regime/:regime", SpaceObjectController, :by_regime
+    get "/space_objects/near_altitude/:altitude_km", SpaceObjectController, :near_altitude
+    get "/space_objects/norad/:norad_id", SpaceObjectController, :show_by_norad
+    get "/space_objects/:id", SpaceObjectController, :show
+    post "/space_objects", SpaceObjectController, :create
+    put "/space_objects/:id", SpaceObjectController, :update
+    delete "/space_objects/:id", SpaceObjectController, :delete
+    put "/space_objects/:id/threat", SpaceObjectController, :update_threat
+    put "/space_objects/:id/tle", SpaceObjectController, :update_tle
+    post "/space_objects/:id/link_satellite", SpaceObjectController, :link_to_satellite
+
+    # Conjunction events (SSA threat detection)
+    get "/conjunctions", ConjunctionController, :index
+    get "/conjunctions/critical", ConjunctionController, :critical
+    get "/conjunctions/statistics", ConjunctionController, :statistics
+    get "/conjunctions/severity_counts", ConjunctionController, :severity_counts
+    get "/conjunctions/detector_status", ConjunctionController, :detector_status
+    post "/conjunctions/trigger_screening", ConjunctionController, :trigger_screening
+    post "/conjunctions/cleanup", ConjunctionController, :cleanup
+    get "/conjunctions/satellite/:satellite_id", ConjunctionController, :for_satellite
+    post "/conjunctions/screen_satellite/:satellite_id", ConjunctionController, :screen_satellite
+    get "/conjunctions/:id", ConjunctionController, :show
+    put "/conjunctions/:id/status", ConjunctionController, :update_status
   end
 
   # Health check endpoint
