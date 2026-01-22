@@ -35,7 +35,9 @@ defmodule StellarCore.Application do
       # Phase 11: Mission scheduler (priority queue)
       MissionScheduler,
       # Phase 11: Downlink window manager
-      DownlinkManager
+      DownlinkManager,
+      # Phase 2: Conjunction detector
+      StellarCore.ConjunctionDetector
     ]
 
     opts = [strategy: :one_for_one, name: StellarCore.Supervisor]

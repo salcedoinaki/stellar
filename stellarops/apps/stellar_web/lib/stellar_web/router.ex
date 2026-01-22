@@ -58,6 +58,20 @@ defmodule StellarWeb.Router do
     post "/alarms/:id/acknowledge", AlarmController, :acknowledge
     post "/alarms/:id/resolve", AlarmController, :resolve
     delete "/alarms/resolved", AlarmController, :clear_resolved
+
+    # Space Objects endpoints (Phase 2)
+    get "/objects", SpaceObjectController, :index
+    get "/objects/:norad_id", SpaceObjectController, :show
+    post "/objects", SpaceObjectController, :create
+    put "/objects/:norad_id", SpaceObjectController, :update
+    put "/objects/:norad_id/tle", SpaceObjectController, :update_tle
+    post "/objects/:norad_id/classify", SpaceObjectController, :classify
+
+    # Conjunction endpoints (Phase 2)
+    get "/conjunctions", ConjunctionController, :index
+    get "/conjunctions/:id", ConjunctionController, :show
+    post "/conjunctions/:id/acknowledge", ConjunctionController, :acknowledge
+    post "/conjunctions/:id/resolve", ConjunctionController, :resolve
   end
 
   # Health check endpoint
