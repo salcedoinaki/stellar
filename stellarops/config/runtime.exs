@@ -3,6 +3,36 @@ import Config
 # Runtime configuration (loaded at runtime, not compile time)
 # This is useful for secrets and environment-specific configuration
 
+# ============================================================================
+# OpenTelemetry Configuration
+# ============================================================================
+
+# Configure OpenTelemetry based on environment
+otel_exporter = System.get_env("OTEL_EXPORTER", "none")
+
+if otel_exporter != "none" do
+  config :opentelemetry,
+    resource: [
+      service: [
+        name: System.get_env("OTEL_SERVICE_NAME", "stellar_ops"),
+        namespace: System.get_env("OTEL_SERVICE_NAMESPACE", "stellarops")
+      ]
+    ],
+    span_processor: :batch,
+    traces_exporter: String.to_atom(otel_exporter)
+
+  # OTLP exporter configuration
+  if otel_exporter == "otlp" do
+    config :opentelemetry_exporter,
+      otlp_protocol: :http_protobuf,
+      otlp_endpoint: System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
+  end
+end
+
+# ============================================================================
+# Production Configuration
+# ============================================================================
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -40,4 +70,14 @@ if config_env() == :prod do
   if System.get_env("PHX_SERVER") do
     config :stellar_web, StellarWeb.Endpoint, server: true
   end
+
+  # Space-Track API credentials (production)
+  config :stellar_core, :space_track,
+    username: System.get_env("SPACE_TRACK_USERNAME"),
+    password: System.get_env("SPACE_TRACK_PASSWORD")
+
+  # Orbital service configuration
+  config :stellar_core, :orbital_service,
+    grpc_url: System.get_env("ORBITAL_SERVICE_GRPC_URL", "http://localhost:50051"),
+    http_url: System.get_env("ORBITAL_SERVICE_HTTP_URL", "http://localhost:9090")
 end

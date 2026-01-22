@@ -1,0 +1,216 @@
+# StellarOps Alert Rules
+# These rules define alerting conditions for the satellite operations platform
+
+groups:
+  # ============================================================================
+  # Space Situational Awareness Alerts
+  # ============================================================================
+  - name: ssa_alerts
+    interval: 30s
+    rules:
+      # Critical conjunction detected
+      - alert: CriticalConjunctionDetected
+        expr: stellar_conjunctions_active{severity="critical"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "Critical conjunction event detected"
+          description: "{{ $value }} critical conjunction(s) requiring immediate attention"
+          runbook_url: "https://docs.stellarops.io/runbooks/critical-conjunction"
+
+      # High severity conjunction threshold
+      - alert: HighConjunctionCount
+        expr: stellar_conjunctions_active{severity="high"} > 3
+        for: 5m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "Multiple high-severity conjunctions detected"
+          description: "{{ $value }} high-severity conjunctions are active"
+
+      # Pending COA decisions
+      - alert: PendingCOADecisions
+        expr: stellar_coas_pending > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "Multiple COAs pending decision"
+          description: "{{ $value }} COAs are awaiting operator decision"
+          runbook_url: "https://docs.stellarops.io/runbooks/pending-coas"
+
+      # COA decision deadline approaching
+      - alert: COADeadlineApproaching
+        expr: stellar_coas_pending > 0 and stellar_coas_urgent > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "COA decision deadline approaching"
+          description: "COAs require immediate decision before deadline"
+
+      # Detection cycle too slow
+      - alert: SlowDetectionCycle
+        expr: histogram_quantile(0.95, rate(stellar_detection_cycle_duration_seconds_bucket[5m])) > 120
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Conjunction detection cycle is slow"
+          description: "p95 detection cycle duration is {{ $value | humanizeDuration }}"
+
+      # Stale TLE data
+      - alert: StaleTLEData
+        expr: stellar_tle_age_seconds > 604800
+        for: 30m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "TLE data is stale"
+          description: "Average TLE age is {{ $value | humanizeDuration }}"
+
+  # ============================================================================
+  # Satellite Operations Alerts
+  # ============================================================================
+  - name: satellite_alerts
+    interval: 30s
+    rules:
+      # Satellite count drop
+      - alert: SatelliteCountDrop
+        expr: stellar_satellites_active < 1
+        for: 5m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "No active satellites"
+          description: "No satellites are currently being tracked"
+
+      # Low energy warning
+      - alert: LowSatelliteEnergy
+        expr: stellar_satellites_energy_avg < 20
+        for: 10m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "Low average satellite energy"
+          description: "Average satellite energy is {{ $value }}%"
+
+      # High memory usage
+      - alert: HighSatelliteMemory
+        expr: stellar_satellites_memory_avg > 85
+        for: 15m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "High average satellite memory usage"
+          description: "Average satellite memory usage is {{ $value }}%"
+
+      # Task failure spike
+      - alert: TaskFailureSpike
+        expr: rate(stellar_tasks_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "Elevated task failure rate"
+          description: "Task failure rate is {{ $value | humanize }}/s"
+
+  # ============================================================================
+  # System Health Alerts
+  # ============================================================================
+  - name: system_alerts
+    interval: 30s
+    rules:
+      # Application down
+      - alert: StellarWebDown
+        expr: up{job="stellar_web"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "StellarWeb application is down"
+          description: "The StellarOps web application is not responding"
+
+      # Orbital service down
+      - alert: OrbitalServiceDown
+        expr: up{job="orbital_service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Orbital service is down"
+          description: "The Rust orbital computation service is not responding"
+
+      # Database connection issues
+      - alert: DatabaseConnectionPoolExhausted
+        expr: stellar_data_repo_pool_size - stellar_data_repo_pool_available < 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Only {{ $value }} database connections available"
+
+      # High error rate
+      - alert: HighAPIErrorRate
+        expr: rate(phoenix_http_requests_total{status=~"5.."}[5m]) / rate(phoenix_http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }}"
+
+      # Slow API response
+      - alert: SlowAPIResponse
+        expr: histogram_quantile(0.95, rate(phoenix_http_request_duration_milliseconds_bucket[5m])) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Slow API response times"
+          description: "p95 API response time is {{ $value }}ms"
+
+  # ============================================================================
+  # Mission Alerts
+  # ============================================================================
+  - name: mission_alerts
+    interval: 60s
+    rules:
+      # Mission failure rate
+      - alert: HighMissionFailureRate
+        expr: rate(stellar_missions_failed_total[1h]) / rate(stellar_missions_completed_total[1h]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          team: operations
+        annotations:
+          summary: "High mission failure rate"
+          description: "Mission failure rate is {{ $value | humanizePercentage }}"
+
+      # Critical mission delayed
+      - alert: CriticalMissionDelayed
+        expr: stellar_missions_critical_pending > 0 and stellar_missions_critical_overdue > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "Critical mission is overdue"
+          description: "{{ $value }} critical mission(s) past scheduled execution time"
