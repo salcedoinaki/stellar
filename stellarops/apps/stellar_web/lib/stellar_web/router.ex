@@ -4,8 +4,16 @@ defmodule StellarWeb.Router do
   import Plug.Conn
   import Phoenix.Controller
 
+  alias StellarWeb.Plugs.RateLimiter
+
   pipeline :api do
     plug :accepts, ["json"]
+    plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
+  end
+
+  pipeline :api_strict do
+    plug :accepts, ["json"]
+    plug RateLimiter, limit: 30, window_ms: 60_000, category: "api_strict"
   end
 
   scope "/api", StellarWeb do

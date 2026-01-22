@@ -16,6 +16,7 @@ defmodule StellarData.Satellites.Satellite do
 
   schema "satellites" do
     field :name, :string
+    field :norad_id, :string
     field :mode, Ecto.Enum, values: [:nominal, :safe, :survival], default: :nominal
     field :energy, :float, default: 100.0
     field :memory_used, :float, default: 0.0
@@ -24,6 +25,8 @@ defmodule StellarData.Satellites.Satellite do
     field :position_z, :float, default: 0.0
     field :tle_line1, :string
     field :tle_line2, :string
+    field :tle_epoch, :utc_datetime_usec
+    field :tle_updated_at, :utc_datetime_usec
     field :launched_at, :utc_datetime_usec
     field :active, :boolean, default: true
 
@@ -36,6 +39,7 @@ defmodule StellarData.Satellites.Satellite do
   @required_fields [:id]
   @optional_fields [
     :name,
+    :norad_id,
     :mode,
     :energy,
     :memory_used,
@@ -44,6 +48,8 @@ defmodule StellarData.Satellites.Satellite do
     :position_z,
     :tle_line1,
     :tle_line2,
+    :tle_epoch,
+    :tle_updated_at,
     :launched_at,
     :active
   ]

@@ -233,4 +233,50 @@ defmodule StellarData.GroundStations do
     |> select([g], sum(g.bandwidth_mbps * (1 - g.current_load / 100)))
     |> Repo.one() || 0.0
   end
+
+  @doc """
+  Lists active (online) ground stations.
+  """
+  def list_active_ground_stations do
+    list_online_ground_stations()
+  end
+
+  @doc """
+  Deletes contact windows that have passed (LOS < now).
+  """
+  def delete_past_contact_windows do
+    now = DateTime.utc_now()
+
+    ContactWindow
+    |> where([w], w.los < ^now)
+    |> where([w], w.status != :completed)
+    |> Repo.delete_all()
+  end
+
+  @doc """
+  Creates or updates a contact window based on satellite_id, ground_station_id, and aos_time.
+  """
+  def create_or_update_contact_window(attrs) do
+    case find_contact_window(attrs.satellite_id, attrs.ground_station_id, attrs.aos_time) do
+      nil ->
+        create_contact_window(attrs)
+
+      existing ->
+        existing
+        |> ContactWindow.changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  defp find_contact_window(satellite_id, ground_station_id, aos_time) do
+    # Find a window within 1 minute of the AOS time
+    aos_start = DateTime.add(aos_time, -60, :second)
+    aos_end = DateTime.add(aos_time, 60, :second)
+
+    ContactWindow
+    |> where([w], w.satellite_id == ^satellite_id)
+    |> where([w], w.ground_station_id == ^ground_station_id)
+    |> where([w], w.aos >= ^aos_start and w.aos <= ^aos_end)
+    |> Repo.one()
+  end
 end

@@ -125,4 +125,34 @@ defmodule StellarData.Satellites do
         update_satellite_state(satellite, attrs)
     end
   end
+
+  @doc """
+  Returns satellites that need TLE updates.
+
+  A satellite needs a TLE update if:
+  - It has a NORAD ID
+  - It's active
+  - TLE was never fetched OR TLE is older than the specified max age
+  """
+  @spec list_satellites_needing_tle_update(keyword()) :: [Satellite.t()]
+  def list_satellites_needing_tle_update(opts \\ []) do
+    max_age_hours = Keyword.get(opts, :max_age_hours, 24)
+    cutoff = DateTime.add(DateTime.utc_now(), -max_age_hours, :hour)
+
+    Satellite
+    |> where([s], s.active == true)
+    |> where([s], not is_nil(s.norad_id))
+    |> where([s], is_nil(s.tle_updated_at) or s.tle_updated_at < ^cutoff)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns satellites by NORAD catalog ID.
+  """
+  @spec get_satellite_by_norad_id(String.t()) :: Satellite.t() | nil
+  def get_satellite_by_norad_id(norad_id) do
+    Satellite
+    |> where([s], s.norad_id == ^norad_id)
+    |> Repo.one()
+  end
 end
