@@ -59,11 +59,12 @@ defmodule StellarCore.Satellite.State do
 
   @doc """
   Updates the satellite position.
+  Accepts integers or floats for coordinates.
   """
-  @spec update_position(t(), {float(), float(), float()}) :: t()
-  def update_position(%__MODULE__{} = state, {x, y, z} = pos)
-      when is_float(x) and is_float(y) and is_float(z) do
-    %{state | position: pos}
+  @spec update_position(t(), {number(), number(), number()}) :: t()
+  def update_position(%__MODULE__{} = state, {x, y, z})
+      when is_number(x) and is_number(y) and is_number(z) do
+    %{state | position: {x / 1, y / 1, z / 1}}
   end
 
   @doc """
