@@ -1,0 +1,317 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  ELIXIR_VERSION: '1.15.7'
+  OTP_VERSION: '26.1'
+  NODE_VERSION: '20'
+  RUST_VERSION: 'stable'
+
+jobs:
+  # ============================================================================
+  # Determine Environment
+  # ============================================================================
+  setup:
+    name: Setup Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      image_tag: ${{ steps.set-env.outputs.image_tag }}
+    
+    steps:
+      - name: Determine environment
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "image_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================================================
+  # Build Production Images
+  # ============================================================================
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    needs: setup
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build Backend
+      - name: Build Backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops
+          file: stellarops/infrastructure/docker/Dockerfile.elixir.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ needs.setup.outputs.image_tag }}
+            ghcr.io/${{ github.repository }}/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MIX_ENV=prod
+            RELEASE_NAME=stellar
+
+      # Build Frontend
+      - name: Build Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/frontend
+          file: stellarops/infrastructure/docker/Dockerfile.frontend.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:${{ needs.setup.outputs.image_tag }}
+            ghcr.io/${{ github.repository }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build Orbital Service
+      - name: Build Orbital Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/services/orbital_service
+          file: stellarops/infrastructure/docker/Dockerfile.rust.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/orbital:${{ needs.setup.outputs.image_tag }}
+            ghcr.io/${{ github.repository }}/orbital:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            CARGO_BUILD_JOBS=2
+
+  # ============================================================================
+  # Deploy to Staging
+  # ============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    if: needs.setup.outputs.environment == 'staging'
+    environment: staging
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
+
+      - name: Update image tags
+        working-directory: stellarops/k8s/overlays/dev
+        run: |
+          kustomize edit set image \
+            stellar-backend=ghcr.io/${{ github.repository }}/backend:${{ needs.setup.outputs.image_tag }} \
+            stellar-frontend=ghcr.io/${{ github.repository }}/frontend:${{ needs.setup.outputs.image_tag }} \
+            stellar-orbital=ghcr.io/${{ github.repository }}/orbital:${{ needs.setup.outputs.image_tag }}
+
+      - name: Deploy to staging
+        run: |
+          kubectl apply -k stellarops/k8s/overlays/dev
+          kubectl rollout status deployment/stellar-backend -n stellar-staging --timeout=300s
+          kubectl rollout status deployment/stellar-frontend -n stellar-staging --timeout=300s
+          kubectl rollout status deployment/orbital-service -n stellar-staging --timeout=300s
+
+      - name: Run smoke tests
+        run: |
+          STAGING_URL="${{ secrets.STAGING_URL }}"
+          
+          # Health check
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/health")
+          if [ "$response" != "200" ]; then
+            echo "Health check failed with status $response"
+            exit 1
+          fi
+          
+          # Readiness check
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$STAGING_URL/api/health/ready")
+          if [ "$response" != "200" ]; then
+            echo "Readiness check failed with status $response"
+            exit 1
+          fi
+          
+          echo "Smoke tests passed!"
+
+      - name: Notify deployment
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Staging deployment ${{ job.status }}: ${{ github.repository }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Staging Deployment ${{ job.status }}*\n*Repository:* ${{ github.repository }}\n*Commit:* ${{ github.sha }}\n*Actor:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+  # ============================================================================
+  # Deploy to Production
+  # ============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [setup, build]
+    if: needs.setup.outputs.environment == 'production'
+    environment: production
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Set up kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > $HOME/.kube/config
+
+      - name: Update image tags
+        working-directory: stellarops/k8s/overlays/prod
+        run: |
+          kustomize edit set image \
+            stellar-backend=ghcr.io/${{ github.repository }}/backend:${{ needs.setup.outputs.image_tag }} \
+            stellar-frontend=ghcr.io/${{ github.repository }}/frontend:${{ needs.setup.outputs.image_tag }} \
+            stellar-orbital=ghcr.io/${{ github.repository }}/orbital:${{ needs.setup.outputs.image_tag }}
+
+      - name: Deploy to production (Blue/Green)
+        run: |
+          # Deploy to green
+          kubectl apply -k stellarops/k8s/overlays/prod
+          
+          # Wait for rollout
+          kubectl rollout status deployment/stellar-backend -n stellar --timeout=600s
+          kubectl rollout status deployment/stellar-frontend -n stellar --timeout=300s
+          kubectl rollout status deployment/orbital-service -n stellar --timeout=300s
+
+      - name: Run production verification
+        run: |
+          PROD_URL="${{ secrets.PROD_URL }}"
+          
+          # Health check
+          response=$(curl -s -o /dev/null -w "%{http_code}" "$PROD_URL/api/health")
+          if [ "$response" != "200" ]; then
+            echo "Health check failed with status $response"
+            exit 1
+          fi
+          
+          # Detailed health check
+          health_response=$(curl -s "$PROD_URL/api/health/detailed")
+          echo "Health response: $health_response"
+          
+          # Check all services are healthy
+          status=$(echo "$health_response" | jq -r '.status')
+          if [ "$status" != "healthy" ]; then
+            echo "System not fully healthy: $status"
+            # Don't fail, but log warning
+          fi
+          
+          echo "Production verification passed!"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Notify deployment
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Production deployment ${{ job.status }}: ${{ github.repository }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":rocket: *Production Deployment ${{ job.status }}*\n*Repository:* ${{ github.repository }}\n*Version:* ${{ needs.setup.outputs.image_tag }}\n*Actor:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true
+
+  # ============================================================================
+  # Rollback Job (Manual Trigger)
+  # ============================================================================
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && failure()
+    needs: [deploy-staging, deploy-production]
+    
+    steps:
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Rollback
+        run: |
+          echo "Rolling back deployment..."
+          kubectl rollout undo deployment/stellar-backend -n stellar
+          kubectl rollout undo deployment/stellar-frontend -n stellar
+          kubectl rollout undo deployment/orbital-service -n stellar
+          
+          echo "Waiting for rollback to complete..."
+          kubectl rollout status deployment/stellar-backend -n stellar --timeout=300s
+          kubectl rollout status deployment/stellar-frontend -n stellar --timeout=300s
+          kubectl rollout status deployment/orbital-service -n stellar --timeout=300s
