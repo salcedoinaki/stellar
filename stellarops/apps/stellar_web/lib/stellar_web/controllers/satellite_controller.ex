@@ -61,7 +61,7 @@ defmodule StellarWeb.SatelliteController do
         # Broadcast the creation
         StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_created", %{id: id})
 
-        state = Satellite.get_state(id)
+        {:ok, state} = Satellite.get_state(id)
 
         conn
         |> put_status(:created)
@@ -109,20 +109,21 @@ defmodule StellarWeb.SatelliteController do
   Body: {"delta": -10.0}
   """
   def update_energy(conn, %{"id" => id, "delta" => delta}) when is_number(delta) do
-    if Satellite.alive?(id) do
-      Satellite.update_energy(id, delta)
-      # Give the cast time to process
-      :timer.sleep(5)
-      state = Satellite.get_state(id)
+    case Satellite.update_energy(id, delta) do
+      {:ok, :updated} ->
+        # Give the cast time to process
+        Process.sleep(5)
+        {:ok, state} = Satellite.get_state(id)
 
-      # Broadcast the update
-      StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
+        # Broadcast the update
+        StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 
-      json(conn, %{data: serialize_state(state)})
-    else
-      conn
-      |> put_status(:not_found)
-      |> json(%{error: "Satellite not found", id: id})
+        json(conn, %{data: serialize_state(state)})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Satellite not found", id: id})
     end
   end
 
@@ -148,20 +149,22 @@ defmodule StellarWeb.SatelliteController do
         |> put_status(:bad_request)
         |> json(%{error: "Invalid mode. Must be: nominal, safe, or survival"})
 
-      not Satellite.alive?(id) ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Satellite not found", id: id})
-
       true ->
-        Satellite.set_mode(id, mode)
-        :timer.sleep(5)
-        state = Satellite.get_state(id)
+        case Satellite.set_mode(id, mode) do
+          {:ok, :updated} ->
+            Process.sleep(5)
+            {:ok, state} = Satellite.get_state(id)
 
-        # Broadcast the update
-        StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
+            # Broadcast the update
+            StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 
-        json(conn, %{data: serialize_state(state)})
+            json(conn, %{data: serialize_state(state)})
+
+          {:error, :not_found} ->
+            conn
+            |> put_status(:not_found)
+            |> json(%{error: "Satellite not found", id: id})
+        end
     end
   end
 
@@ -180,19 +183,20 @@ defmodule StellarWeb.SatelliteController do
   """
   def update_memory(conn, %{"id" => id, "memory" => memory})
       when is_number(memory) and memory >= 0 do
-    if Satellite.alive?(id) do
-      Satellite.update_memory(id, memory)
-      :timer.sleep(5)
-      state = Satellite.get_state(id)
+    case Satellite.update_memory(id, memory) do
+      {:ok, :updated} ->
+        Process.sleep(5)
+        {:ok, state} = Satellite.get_state(id)
 
-      # Broadcast the update
-      StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
+        # Broadcast the update
+        StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 
-      json(conn, %{data: serialize_state(state)})
-    else
-      conn
-      |> put_status(:not_found)
-      |> json(%{error: "Satellite not found", id: id})
+        json(conn, %{data: serialize_state(state)})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Satellite not found", id: id})
     end
   end
 
@@ -221,7 +225,7 @@ defmodule StellarWeb.SatelliteController do
   end
 
   defp generate_id do
-    "SAT-#{:rand.uniform(99999) |> Integer.to_string() |> String.pad_leading(5, "0")}"
+    "SAT-" <> (Ecto.UUID.generate() |> String.slice(0, 8) |> String.upcase())
   end
 
   defp parse_mode("nominal"), do: :nominal
