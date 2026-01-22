@@ -34,6 +34,9 @@ defmodule StellarWeb.MixProject do
       {:jason, "~> 1.4"},
       {:bandit, "~> 1.5"},
       {:cors_plug, "~> 3.0"},
+      # Authentication
+      {:guardian, "~> 2.3"},
+      {:bcrypt_elixir, "~> 3.0"},
       # Observability - prom_ex with all required optional deps
       {:prom_ex, "~> 1.9"},
       {:finch, "~> 0.18"},
