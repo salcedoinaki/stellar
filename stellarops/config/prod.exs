@@ -10,11 +10,7 @@ config :stellar_web, StellarWeb.Endpoint,
 config :logger, level: :info
 
 # JSON structured logging for production
+# Uses our custom JSON formatter for compatibility with log aggregation systems
 config :logger, :console,
-  format: {LoggerJSON.Formatters.GoogleCloud, :format},
+  format: {StellarCore.Logger.JSONFormatter, :format},
   metadata: :all
-
-config :logger_json, :backend,
-  metadata: :all,
-  json_encoder: Jason,
-  formatter: LoggerJSON.Formatters.GoogleCloud

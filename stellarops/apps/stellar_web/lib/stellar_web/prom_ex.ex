@@ -18,8 +18,9 @@ defmodule StellarWeb.PromEx do
       {Plugins.Phoenix, router: StellarWeb.Router, endpoint: StellarWeb.Endpoint},
       {Plugins.Ecto, repos: [StellarData.Repo]},
       
-      # Custom StellarOps metrics plugin
-      StellarWeb.PromEx.StellarPlugin
+      # Custom StellarOps metrics plugins
+      StellarWeb.PromEx.StellarPlugin,
+      StellarWeb.PromEx.SSAPlugin
     ]
   end
 

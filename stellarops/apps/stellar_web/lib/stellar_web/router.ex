@@ -118,11 +118,14 @@ defmodule StellarWeb.Router do
     post "/coas/:id/reject", COAController, :reject
   end
 
-  # Health check endpoint
-  scope "/", StellarWeb do
+  # Health check endpoints
+  scope "/health", StellarWeb do
     pipe_through :api
 
-    get "/health", HealthController, :index
+    get "/", HealthController, :index
+    get "/ready", HealthController, :ready
+    get "/live", HealthController, :live
+    get "/detailed", HealthController, :detailed
   end
 
   # Prometheus metrics endpoint
