@@ -22,6 +22,48 @@ defmodule StellarData.Telemetry do
   end
 
   @doc """
+  Creates a telemetry event from a map.
+  """
+  def create_event(attrs) do
+    %TelemetryEvent{}
+    |> TelemetryEvent.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Creates multiple telemetry events in a batch.
+
+  ## Parameters
+    - events: List of event attribute maps with :satellite_id, :event_type, :payload, :recorded_at
+
+  ## Returns
+    - {:ok, count} on success
+    - {:error, reason} on failure
+  """
+  def create_events_batch(events) when is_list(events) do
+    now = DateTime.utc_now()
+
+    entries =
+      Enum.map(events, fn event ->
+        %{
+          id: Ecto.UUID.generate(),
+          satellite_id: event.satellite_id,
+          event_type: event.event_type,
+          data: event[:payload] || event[:data] || %{},
+          recorded_at: event[:recorded_at] || now,
+          inserted_at: now,
+          updated_at: now
+        }
+      end)
+
+    case Repo.insert_all(TelemetryEvent, entries) do
+      {count, _} -> {:ok, count}
+    end
+  rescue
+    e -> {:error, e}
+  end
+
+  @doc """
   Gets telemetry events for a satellite.
 
   Options:

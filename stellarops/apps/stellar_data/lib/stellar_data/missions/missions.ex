@@ -133,23 +133,40 @@ defmodule StellarData.Missions do
   @doc """
   Starts execution of a scheduled mission.
   """
-  def start_mission(%Mission{status: :scheduled} = mission) do
+  def start_mission(%Mission{status: status} = mission) when status in [:pending, :scheduled] do
     mission
     |> Mission.start_changeset()
     |> Repo.update()
   end
 
-  def start_mission(%Mission{status: status}, _scheduled_at) do
+  def start_mission(%Mission{status: status}) do
     {:error, "Cannot start mission with status: #{status}"}
+  end
+
+  @doc """
+  Starts a mission by ID.
+  """
+  def start_mission(id) when is_binary(id) do
+    case get_mission(id) do
+      nil -> {:error, :not_found}
+      mission -> start_mission(mission)
+    end
   end
 
   @doc """
   Completes a mission successfully.
   """
-  def complete_mission(%Mission{status: :running} = mission, result \\ %{}) do
+  def complete_mission(%Mission{status: :running} = mission, result) do
     mission
     |> Mission.complete_changeset(result)
     |> Repo.update()
+  end
+
+  def complete_mission(id, result) when is_binary(id) do
+    case get_mission(id) do
+      nil -> {:error, :not_found}
+      mission -> complete_mission(mission, result)
+    end
   end
 
   @doc """
@@ -161,16 +178,30 @@ defmodule StellarData.Missions do
     |> Repo.update()
   end
 
+  def fail_mission(id, error) when is_binary(id) do
+    case get_mission(id) do
+      nil -> {:error, :not_found}
+      mission -> fail_mission(mission, error)
+    end
+  end
+
   @doc """
   Cancels a mission.
   """
   def cancel_mission(%Mission{} = mission, reason \\ "Canceled by user") do
-    if mission.status in [:pending, :scheduled] do
+    if mission.status in [:pending, :scheduled, :running] do
       mission
       |> Mission.cancel_changeset(reason)
       |> Repo.update()
     else
       {:error, "Cannot cancel mission with status: #{mission.status}"}
+    end
+  end
+
+  def cancel_mission(id, reason) when is_binary(id) do
+    case get_mission(id) do
+      nil -> {:error, :not_found}
+      mission -> cancel_mission(mission, reason)
     end
   end
 
