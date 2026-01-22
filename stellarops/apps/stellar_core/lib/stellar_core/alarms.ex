@@ -274,6 +274,13 @@ defmodule StellarCore.Alarms do
     # Log based on severity
     log_alarm(alarm)
 
+    # Emit telemetry event for metrics
+    :telemetry.execute(
+      [:stellar, :alarm, :raised],
+      %{count: 1},
+      %{severity: to_string(severity), type: type, source: source}
+    )
+
     # Broadcast to subscribers
     broadcast_alarm(:alarm_raised, alarm)
 
@@ -303,6 +310,13 @@ defmodule StellarCore.Alarms do
         # Persist to database
         AlarmsDB.acknowledge_alarm(alarm_id, user)
 
+        # Emit telemetry event
+        :telemetry.execute(
+          [:stellar, :alarm, :acknowledged],
+          %{count: 1},
+          %{severity: to_string(updated.severity), type: updated.type}
+        )
+
         broadcast_alarm(:alarm_acknowledged, updated)
         {:reply, :ok, state}
 
@@ -320,6 +334,13 @@ defmodule StellarCore.Alarms do
 
         # Persist to database
         AlarmsDB.resolve_alarm(alarm_id)
+
+        # Emit telemetry event
+        :telemetry.execute(
+          [:stellar, :alarm, :resolved],
+          %{count: 1},
+          %{severity: to_string(updated.severity), type: updated.type}
+        )
 
         broadcast_alarm(:alarm_resolved, updated)
         {:reply, :ok, state}

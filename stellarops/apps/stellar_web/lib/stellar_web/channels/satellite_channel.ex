@@ -10,21 +10,35 @@ defmodule StellarWeb.SatelliteChannel do
   Clients can also send commands:
   - get_all: request current state of all satellites
   - get_satellite: request state of a specific satellite
+
+  ## Heartbeat (TASK-128)
+  
+  The channel supports application-level heartbeat messages in addition
+  to Phoenix's built-in transport-level heartbeat. Clients can send
+  "heartbeat" messages and receive a "heartbeat_ack" response with
+  server timestamp for latency measurement.
   """
 
   use Phoenix.Channel
 
   alias StellarCore.Satellite
 
+  # Heartbeat interval for server-initiated heartbeats (30 seconds)
+  @heartbeat_interval_ms 30_000
+
   @impl true
   def join("satellites:lobby", _payload, socket) do
     # Send current satellite states on join
     send(self(), :after_join)
+    # Schedule server-initiated heartbeat
+    schedule_heartbeat()
+    socket = assign(socket, :last_heartbeat, System.system_time(:millisecond))
     {:ok, socket}
   end
 
   def join("satellites:" <> _id, _payload, socket) do
     # Could be used for per-satellite channels in the future
+    socket = assign(socket, :last_heartbeat, System.system_time(:millisecond))
     {:ok, socket}
   end
 
@@ -39,12 +53,43 @@ defmodule StellarWeb.SatelliteChannel do
   end
 
   @impl true
+  def handle_info(:send_heartbeat, socket) do
+    now = System.system_time(:millisecond)
+    push(socket, "server_heartbeat", %{timestamp: now})
+    schedule_heartbeat()
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_in("get_all", _payload, socket) do
     satellites =
       Satellite.list_states()
       |> Enum.map(&serialize_state/1)
 
     {:reply, {:ok, %{satellites: satellites}}, socket}
+  end
+
+  # Heartbeat handling (TASK-128)
+  # Client can send heartbeat messages for latency measurement
+  @impl true
+  def handle_in("heartbeat", payload, socket) do
+    now = System.system_time(:millisecond)
+    client_timestamp = Map.get(payload, "timestamp", 0)
+    socket = assign(socket, :last_heartbeat, now)
+
+    {:reply, {:ok, %{
+      server_timestamp: now,
+      client_timestamp: client_timestamp,
+      latency: if(client_timestamp > 0, do: now - client_timestamp, else: nil)
+    }}, socket}
+  end
+
+  # Respond to heartbeat_ack from client (confirms client received server heartbeat)
+  @impl true
+  def handle_in("heartbeat_ack", _payload, socket) do
+    now = System.system_time(:millisecond)
+    socket = assign(socket, :last_heartbeat, now)
+    {:noreply, socket}
   end
 
   @impl true
@@ -153,4 +198,8 @@ defmodule StellarWeb.SatelliteChannel do
   defp parse_mode("safe"), do: :safe
   defp parse_mode("survival"), do: :survival
   defp parse_mode(_), do: nil
+
+  defp schedule_heartbeat do
+    Process.send_after(self(), :send_heartbeat, @heartbeat_interval_ms)
+  end
 end

@@ -138,4 +138,32 @@ defmodule StellarWeb.SatelliteChannelTest do
       assert_reply ref, :error, %{reason: "not_found"}
     end
   end
+
+  # TASK-128: Heartbeat handling tests
+  describe "heartbeat" do
+    test "responds to heartbeat with server timestamp", %{socket: socket} do
+      ref = push(socket, "heartbeat", %{})
+      assert_reply ref, :ok, response
+
+      assert is_integer(response.server_timestamp)
+      assert response.server_timestamp > 0
+    end
+
+    test "returns client timestamp and latency when provided", %{socket: socket} do
+      client_time = System.system_time(:millisecond)
+      ref = push(socket, "heartbeat", %{"timestamp" => client_time})
+      assert_reply ref, :ok, response
+
+      assert response.client_timestamp == client_time
+      assert response.server_timestamp >= client_time
+      assert is_integer(response.latency)
+      assert response.latency >= 0
+    end
+
+    test "heartbeat_ack is silently accepted", %{socket: socket} do
+      ref = push(socket, "heartbeat_ack", %{})
+      # heartbeat_ack returns noreply, so we shouldn't get a reply
+      refute_reply ref, :ok, _, 100
+    end
+  end
 end

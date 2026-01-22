@@ -185,4 +185,63 @@ defmodule StellarCore.Satellite.SupervisorTest do
       end
     end
   end
+
+  describe "registry lookup after restart (TASK-037)" do
+    test "registry correctly tracks satellite after supervisor restart" do
+      # Start a satellite
+      {:ok, original_pid} = Supervisor.start_satellite("REG-RESTART-001")
+      assert {:ok, ^original_pid} = Registry.lookup("REG-RESTART-001")
+
+      # Kill the satellite to trigger restart
+      Process.exit(original_pid, :kill)
+      :timer.sleep(50)
+
+      # Registry should have the new PID
+      {:ok, new_pid} = Registry.lookup("REG-RESTART-001")
+      assert is_pid(new_pid)
+      assert new_pid != original_pid
+      assert Process.alive?(new_pid)
+
+      Supervisor.stop_satellite("REG-RESTART-001")
+    end
+
+    test "registry is empty after satellite is stopped" do
+      {:ok, _pid} = Supervisor.start_satellite("REG-RESTART-002")
+      assert {:ok, _} = Registry.lookup("REG-RESTART-002")
+
+      Supervisor.stop_satellite("REG-RESTART-002")
+      :timer.sleep(10)
+
+      assert :error = Registry.lookup("REG-RESTART-002")
+    end
+  end
+
+  describe "supervisor restart strategy (TASK-036)" do
+    test "supervisor uses one_for_one strategy - other satellites unaffected" do
+      # Start multiple satellites
+      {:ok, pid1} = Supervisor.start_satellite("STRATEGY-001")
+      {:ok, pid2} = Supervisor.start_satellite("STRATEGY-002")
+      {:ok, pid3} = Supervisor.start_satellite("STRATEGY-003")
+
+      # Kill one satellite
+      Process.exit(pid2, :kill)
+      :timer.sleep(50)
+
+      # Other satellites should be unaffected (same PID)
+      assert Supervisor.whereis("STRATEGY-001") == pid1
+      assert Supervisor.whereis("STRATEGY-003") == pid3
+      assert Process.alive?(pid1)
+      assert Process.alive?(pid3)
+
+      # The killed one should have a new PID
+      new_pid2 = Supervisor.whereis("STRATEGY-002")
+      assert new_pid2 != pid2
+      assert Process.alive?(new_pid2)
+
+      # Clean up
+      Supervisor.stop_satellite("STRATEGY-001")
+      Supervisor.stop_satellite("STRATEGY-002")
+      Supervisor.stop_satellite("STRATEGY-003")
+    end
+  end
 end
