@@ -3,7 +3,8 @@ defmodule StellarCore.Alarms do
   Alarm and notification system for StellarOps.
 
   Provides:
-  - In-memory alarm tracking with severity levels
+  - In-memory alarm tracking with severity levels (ETS for fast access)
+  - Database persistence via StellarData.Alarms
   - PubSub broadcasting for real-time notifications
   - Automatic alarm generation from mission failures
   - Alarm acknowledgment and resolution
@@ -13,6 +14,7 @@ defmodule StellarCore.Alarms do
   require Logger
 
   alias Phoenix.PubSub
+  alias StellarData.Alarms, as: AlarmsDB
 
   @pubsub StellarWeb.PubSub
 
@@ -185,21 +187,83 @@ defmodule StellarCore.Alarms do
     # ETS table for fast alarm lookups
     :ets.new(:stellar_alarms, [:named_table, :set, :public, read_concurrency: true])
 
+    # Load active alarms from database on startup
+    spawn_link(fn -> load_alarms_from_db() end)
+
     Logger.info("[Alarms] Alarm system started")
     {:ok, %{}}
   end
 
+  defp load_alarms_from_db do
+    # Small delay to ensure DB is available
+    Process.sleep(1000)
+
+    try do
+      alarms = AlarmsDB.list_alarms(status: :active)
+
+      Enum.each(alarms, fn db_alarm ->
+        alarm = db_alarm_to_map(db_alarm)
+        :ets.insert(:stellar_alarms, {alarm.id, alarm})
+      end)
+
+      Logger.info("[Alarms] Loaded #{length(alarms)} active alarms from database")
+    rescue
+      error ->
+        Logger.warning("[Alarms] Failed to load alarms from database: #{inspect(error)}")
+    end
+  end
+
+  defp db_alarm_to_map(db_alarm) do
+    %{
+      id: db_alarm.id,
+      type: db_alarm.type,
+      severity: db_alarm.severity,
+      message: db_alarm.message,
+      source: db_alarm.source,
+      details: db_alarm.details || %{},
+      status: db_alarm.status,
+      created_at: db_alarm.inserted_at,
+      acknowledged_at: db_alarm.acknowledged_at,
+      resolved_at: db_alarm.resolved_at,
+      acknowledged_by: db_alarm.acknowledged_by
+    }
+  end
+
   @impl true
   def handle_call({:raise_alarm, type, severity, message, source, details}, _from, state) do
+    # Extract satellite_id from source if present (format: "satellite:SAT-001")
+    satellite_id = extract_satellite_id(source)
+
+    # Persist to database first
+    db_attrs = %{
+      type: type,
+      severity: severity,
+      message: message,
+      source: source,
+      details: details,
+      satellite_id: satellite_id
+    }
+
+    {alarm_id, created_at} =
+      case AlarmsDB.create_alarm(db_attrs) do
+        {:ok, db_alarm} ->
+          {db_alarm.id, db_alarm.inserted_at}
+
+        {:error, _changeset} ->
+          # Fallback to generated ID if DB fails
+          Logger.warning("[Alarms] Failed to persist alarm to database, using in-memory only")
+          {generate_alarm_id(), DateTime.utc_now()}
+      end
+
     alarm = %{
-      id: generate_alarm_id(),
+      id: alarm_id,
       type: type,
       severity: severity,
       message: message,
       source: source,
       details: details,
       status: :active,
-      created_at: DateTime.utc_now(),
+      created_at: created_at,
       acknowledged_at: nil,
       resolved_at: nil,
       acknowledged_by: nil
@@ -216,6 +280,13 @@ defmodule StellarCore.Alarms do
     {:reply, {:ok, alarm}, state}
   end
 
+  defp extract_satellite_id(source) do
+    case String.split(source, ":") do
+      ["satellite", sat_id] -> sat_id
+      _ -> nil
+    end
+  end
+
   @impl true
   def handle_call({:acknowledge, alarm_id, user}, _from, state) do
     case :ets.lookup(:stellar_alarms, alarm_id) do
@@ -228,6 +299,10 @@ defmodule StellarCore.Alarms do
         }
 
         :ets.insert(:stellar_alarms, {alarm_id, updated})
+
+        # Persist to database
+        AlarmsDB.acknowledge_alarm(alarm_id, user)
+
         broadcast_alarm(:alarm_acknowledged, updated)
         {:reply, :ok, state}
 
@@ -242,6 +317,10 @@ defmodule StellarCore.Alarms do
       [{^alarm_id, alarm}] ->
         updated = %{alarm | status: :resolved, resolved_at: DateTime.utc_now()}
         :ets.insert(:stellar_alarms, {alarm_id, updated})
+
+        # Persist to database
+        AlarmsDB.resolve_alarm(alarm_id)
+
         broadcast_alarm(:alarm_resolved, updated)
         {:reply, :ok, state}
 
@@ -308,6 +387,10 @@ defmodule StellarCore.Alarms do
       |> Enum.map(fn {id, _alarm} -> id end)
 
     Enum.each(to_delete, &:ets.delete(:stellar_alarms, &1))
+
+    # Also clear from database
+    {db_deleted, _} = AlarmsDB.clear_resolved(older_than_seconds)
+    Logger.info("[Alarms] Cleared #{length(to_delete)} from ETS, #{db_deleted} from database")
 
     {:reply, {:ok, length(to_delete)}, state}
   end

@@ -5,11 +5,14 @@ defmodule StellarCore.Orbital do
   Provides functions to call the orbital propagation gRPC service
   for satellite position calculations using SGP4.
 
-  Currently uses HTTP/JSON as a simpler alternative to gRPC,
-  with the option to upgrade to native gRPC client later.
+  Uses HTTP/JSON endpoints exposed by the Rust service on the metrics port (9090).
+  The gRPC endpoints (50051) are also available for high-performance use cases.
   """
 
   require Logger
+
+  @http_timeout 10_000
+  @default_http_port 9090
 
   @doc """
   Propagate satellite position from TLE at a given timestamp.
@@ -162,32 +165,142 @@ defmodule StellarCore.Orbital do
   # Private Functions
   # ============================================================================
 
+  defp call_http(:propagate_position, request) do
+    url = "#{orbital_http_url()}/api/propagate"
+
+    body =
+      Jason.encode!(%{
+        satellite_id: request.satellite_id,
+        tle_line1: request.tle.line1,
+        tle_line2: request.tle.line2,
+        timestamp_unix: request.timestamp_unix
+      })
+
+    make_http_request(:post, url, body)
+  end
+
+  defp call_http(:health_check, _request) do
+    url = "#{orbital_http_url()}/health"
+    make_http_request(:get, url, nil)
+  end
+
+  # For trajectory and visibility, fall back to mock until Rust endpoints are added
+  defp call_http(:propagate_trajectory, request) do
+    mock_response(:propagate_trajectory, request)
+  end
+
+  defp call_http(:calculate_visibility, request) do
+    mock_response(:calculate_visibility, request)
+  end
+
+  defp make_http_request(method, url, body) do
+    # Ensure inets and ssl are started
+    :inets.start()
+    :ssl.start()
+
+    headers = [
+      {~c"content-type", ~c"application/json"},
+      {~c"accept", ~c"application/json"}
+    ]
+
+    request =
+      case method do
+        :get ->
+          {String.to_charlist(url), headers}
+
+        :post ->
+          {String.to_charlist(url), headers, ~c"application/json", String.to_charlist(body)}
+      end
+
+    http_opts = [
+      timeout: @http_timeout,
+      connect_timeout: 5_000
+    ]
+
+    opts = [body_format: :binary]
+
+    Logger.debug("Making HTTP #{method} request to #{url}")
+
+    case :httpc.request(method, request, http_opts, opts) do
+      {:ok, {{_http_version, status_code, _reason_phrase}, _headers, response_body}} ->
+        handle_http_response(status_code, response_body)
+
+      {:error, {:failed_connect, _}} ->
+        Logger.warning("Failed to connect to orbital service at #{url}")
+        {:error, :connection_failed}
+
+      {:error, reason} ->
+        Logger.error("HTTP request failed: #{inspect(reason)}")
+        {:error, {:http_error, reason}}
+    end
+  end
+
+  defp handle_http_response(status_code, response_body) when status_code in 200..299 do
+    case Jason.decode(response_body) do
+      {:ok, decoded} ->
+        {:ok, decoded}
+
+      {:error, _} ->
+        {:error, :invalid_json_response}
+    end
+  end
+
+  defp handle_http_response(status_code, response_body) do
+    Logger.warning("Orbital service returned #{status_code}: #{response_body}")
+
+    case Jason.decode(response_body) do
+      {:ok, %{"error" => error}} ->
+        {:ok, %{"success" => false, "error_message" => error}}
+
+      {:ok, decoded} ->
+        {:ok, decoded}
+
+      {:error, _} ->
+        {:error, {:http_error, status_code}}
+    end
+  end
+
+  defp orbital_http_url do
+    case System.get_env("ORBITAL_SERVICE_URL") do
+      nil ->
+        # Parse from ORBITAL_SERVICE_HOST (which may include gRPC port)
+        host = System.get_env("ORBITAL_SERVICE_HOST", "orbital:50051")
+
+        # Extract just the hostname, use HTTP port
+        hostname =
+          host
+          |> String.split(":")
+          |> List.first()
+
+        http_port = System.get_env("ORBITAL_HTTP_PORT", "#{@default_http_port}")
+        "http://#{hostname}:#{http_port}"
+
+      url ->
+        url
+    end
+  end
+
+  # Use actual HTTP for real methods, with fallback to mock for unsupported ones
   defp call_grpc(method, request) do
-    # For now, use HTTP/JSON proxy to gRPC
-    # In production, this would use a proper gRPC client like grpc or gun
-    
-    base_url = orbital_service_url()
-    endpoint = grpc_method_to_http_path(method)
-    url = "#{base_url}#{endpoint}"
+    use_mock = System.get_env("ORBITAL_USE_MOCK", "false") == "true"
 
-    Logger.debug("Calling orbital service: #{method} -> #{url}")
+    if use_mock do
+      mock_response(method, request)
+    else
+      case call_http(method, request) do
+        {:error, :connection_failed} ->
+          Logger.warning("Orbital service unavailable, falling back to mock response")
+          mock_response(method, request)
 
-    # For now, return a mock response since we don't have HTTP endpoints
-    # The actual implementation would use :httpc or a library like Req/Finch
-    mock_response(method, request)
+        result ->
+          result
+      end
+    end
   end
 
-  defp orbital_service_url do
-    host = System.get_env("ORBITAL_SERVICE_HOST", "orbital:50051")
-    # Parse host:port and construct URL
-    # For HTTP/JSON we'd use a different port, but for now return gRPC address
-    "http://#{host}"
-  end
-
-  defp grpc_method_to_http_path(:propagate_position), do: "/orbital.OrbitalService/PropagatePosition"
-  defp grpc_method_to_http_path(:propagate_trajectory), do: "/orbital.OrbitalService/PropagateTrajectory"
-  defp grpc_method_to_http_path(:calculate_visibility), do: "/orbital.OrbitalService/CalculateVisibility"
-  defp grpc_method_to_http_path(:health_check), do: "/orbital.OrbitalService/HealthCheck"
+  defp grpc_method_to_http_path(:propagate_position), do: "/api/propagate"
+  defp grpc_method_to_http_path(:health_check), do: "/health"
+  defp grpc_method_to_http_path(_), do: nil
 
   # Mock responses for development/testing until gRPC client is implemented
   defp mock_response(:propagate_position, request) do
