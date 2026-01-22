@@ -67,6 +67,21 @@ struct PropagateRequest {
     timestamp_unix: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct TrajectoryRequest {
+    satellite_id: String,
+    tle_line1: String,
+    tle_line2: String,
+    start_timestamp_unix: i64,
+    end_timestamp_unix: i64,
+    #[serde(default = "default_step")]
+    step_seconds: i64,
+}
+
+fn default_step() -> i64 {
+    60
+}
+
 #[derive(Debug, Serialize)]
 struct PropagateResponse {
     satellite_id: String,
@@ -80,20 +95,36 @@ struct PropagateResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct TrajectoryResponse {
+    satellite_id: String,
+    points: Vec<TrajectoryPoint>,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TrajectoryPoint {
+    timestamp_unix: i64,
+    position: Position,
+    geodetic: Geodetic,
+}
+
+#[derive(Debug, Serialize, Clone)]
 struct Position {
     x_km: f64,
     y_km: f64,
     z_km: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct Velocity {
     vx_km_s: f64,
     vy_km_s: f64,
     vz_km_s: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct Geodetic {
     latitude_deg: f64,
     longitude_deg: f64,
@@ -154,6 +185,55 @@ async fn propagate_handler(
     }
 }
 
+// HTTP handler for trajectory propagation
+async fn trajectory_handler(
+    State(_state): State<Arc<RwLock<AppState>>>,
+    Json(req): Json<TrajectoryRequest>,
+) -> Result<Json<TrajectoryResponse>, (StatusCode, Json<TrajectoryResponse>)> {
+    match propagator::propagate_trajectory(
+        &req.tle_line1,
+        &req.tle_line2,
+        req.start_timestamp_unix,
+        req.end_timestamp_unix,
+        req.step_seconds,
+    ) {
+        Ok(results) => {
+            let points: Vec<TrajectoryPoint> = results
+                .into_iter()
+                .map(|(ts, result)| TrajectoryPoint {
+                    timestamp_unix: ts,
+                    position: Position {
+                        x_km: result.position_km[0],
+                        y_km: result.position_km[1],
+                        z_km: result.position_km[2],
+                    },
+                    geodetic: Geodetic {
+                        latitude_deg: result.geodetic.latitude_deg,
+                        longitude_deg: result.geodetic.longitude_deg,
+                        altitude_km: result.geodetic.altitude_km,
+                    },
+                })
+                .collect();
+
+            Ok(Json(TrajectoryResponse {
+                satellite_id: req.satellite_id,
+                points,
+                success: true,
+                error: None,
+            }))
+        }
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(TrajectoryResponse {
+                satellite_id: req.satellite_id,
+                points: vec![],
+                success: false,
+                error: Some(e.to_string()),
+            }),
+        )),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load .env file if present
@@ -207,6 +287,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route("/metrics", get(metrics::metrics_handler))
             .route("/health", get(metrics::health_handler))
             .route("/api/propagate", post(propagate_handler))
+            .route("/api/trajectory", post(trajectory_handler))
             .with_state(metrics_state);
 
         let listener = tokio::net::TcpListener::bind(metrics_addr).await.unwrap();

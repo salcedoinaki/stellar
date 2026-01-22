@@ -184,11 +184,23 @@ defmodule StellarCore.Orbital do
     make_http_request(:get, url, nil)
   end
 
-  # For trajectory and visibility, fall back to mock until Rust endpoints are added
   defp call_http(:propagate_trajectory, request) do
-    mock_response(:propagate_trajectory, request)
+    url = "#{orbital_http_url()}/api/trajectory"
+
+    body =
+      Jason.encode!(%{
+        satellite_id: request.satellite_id,
+        tle_line1: request.tle.line1,
+        tle_line2: request.tle.line2,
+        start_timestamp_unix: request.start_timestamp_unix,
+        end_timestamp_unix: request.end_timestamp_unix,
+        step_seconds: request.step_seconds
+      })
+
+    make_http_request(:post, url, body)
   end
 
+  # For visibility, fall back to mock until Rust endpoint is added
   defp call_http(:calculate_visibility, request) do
     mock_response(:calculate_visibility, request)
   end
