@@ -72,6 +72,15 @@ defmodule StellarWeb.Router do
     get "/conjunctions/:id", ConjunctionController, :show
     post "/conjunctions/:id/acknowledge", ConjunctionController, :acknowledge
     post "/conjunctions/:id/resolve", ConjunctionController, :resolve
+
+    # COA endpoints (Phase 3)
+    get "/conjunctions/:conjunction_id/coas", COAController, :index
+    post "/conjunctions/:conjunction_id/coas/generate", COAController, :generate
+    post "/conjunctions/:conjunction_id/coas/regenerate", COAController, :regenerate
+    get "/coas/:id", COAController, :show
+    post "/coas/:id/select", COAController, :select
+    post "/coas/:id/reject", COAController, :reject
+    post "/coas/:id/simulate", COAController, :simulate
   end
 
   # Health check endpoint
