@@ -1,0 +1,252 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  ELIXIR_VERSION: '1.15.7'
+  OTP_VERSION: '26.1'
+
+jobs:
+  # ============================================================================
+  # Validate Release
+  # ============================================================================
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag format
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid tag format: $TAG"
+            echo "Expected format: vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
+          echo "Valid tag: $TAG"
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install dependencies
+        working-directory: stellarops
+        run: mix deps.get
+
+      - name: Run tests
+        working-directory: stellarops
+        run: mix test
+
+  # ============================================================================
+  # Build Release Artifacts
+  # ============================================================================
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and push all images with version tag
+      - name: Build Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops
+          file: stellarops/infrastructure/docker/Dockerfile.elixir.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/frontend
+          file: stellarops/infrastructure/docker/Dockerfile.frontend.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build Orbital Service
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/services/orbital_service
+          file: stellarops/infrastructure/docker/Dockerfile.rust.prod
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/orbital:${{ steps.version.outputs.version }}
+            ghcr.io/${{ github.repository }}/orbital:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Create GitHub Release
+  # ============================================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-release
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [ -n "$PREV_TAG" ]; then
+            echo "Generating changelog from $PREV_TAG to HEAD"
+            
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD | head -50)
+          else
+            echo "No previous tag found, generating full changelog"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" | head -50)
+          fi
+          
+          # Save to file for multiline handling
+          echo "$CHANGELOG" > changelog.txt
+          echo "changelog_file=changelog.txt" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ needs.build-release.outputs.version }}
+          body: |
+            ## StellarOps v${{ needs.build-release.outputs.version }}
+            
+            ### Docker Images
+            
+            - `ghcr.io/${{ github.repository }}/backend:${{ needs.build-release.outputs.version }}`
+            - `ghcr.io/${{ github.repository }}/frontend:${{ needs.build-release.outputs.version }}`
+            - `ghcr.io/${{ github.repository }}/orbital:${{ needs.build-release.outputs.version }}`
+            
+            ### Deployment
+            
+            ```bash
+            # Pull the latest images
+            docker pull ghcr.io/${{ github.repository }}/backend:${{ needs.build-release.outputs.version }}
+            docker pull ghcr.io/${{ github.repository }}/frontend:${{ needs.build-release.outputs.version }}
+            docker pull ghcr.io/${{ github.repository }}/orbital:${{ needs.build-release.outputs.version }}
+            
+            # Or use docker-compose
+            IMAGE_TAG=${{ needs.build-release.outputs.version }} docker-compose -f docker-compose.prod.yml up -d
+            ```
+            
+            ### Kubernetes Deployment
+            
+            ```bash
+            kubectl apply -k k8s/overlays/prod
+            ```
+            
+            ### Changes
+            
+            ${{ steps.changelog.outputs.changelog_file && '$(cat changelog.txt)' || 'See commit history for changes.' }}
+          draft: false
+          prerelease: ${{ contains(needs.build-release.outputs.version, '-') }}
+          generate_release_notes: true
+
+  # ============================================================================
+  # Notify Release
+  # ============================================================================
+  notify:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [build-release, create-release]
+    if: always()
+    
+    steps:
+      - name: Notify Slack
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "New Release: StellarOps v${{ needs.build-release.outputs.version }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 New Release Published"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\nv${{ needs.build-release.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Docker Images:*\n• backend:${{ needs.build-release.outputs.version }}\n• frontend:${{ needs.build-release.outputs.version }}\n• orbital:${{ needs.build-release.outputs.version }}"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Release"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.build-release.outputs.version }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        continue-on-error: true

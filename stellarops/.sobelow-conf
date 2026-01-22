@@ -1,0 +1,26 @@
+# .sobelow-conf - Sobelow Security Scanner Configuration
+#
+# This file configures Sobelow, the security-focused static analysis tool for Phoenix.
+# https://github.com/nccgroup/sobelow
+
+[
+  verbose: false,
+  private: false,
+  skip: false,
+  router: "apps/stellar_web/lib/stellar_web/router.ex",
+  exit: "low",
+  format: "txt",
+  out: "",
+  threshold: "low",
+  ignore: [
+    # Ignore specific vulnerabilities by ID if needed
+    # "Config.HTTPS"
+  ],
+  ignore_files: [
+    # Files to skip scanning
+    "deps/",
+    "_build/",
+    "test/",
+    "priv/static/"
+  ]
+]
