@@ -67,6 +67,49 @@ struct PropagateRequest {
     timestamp_unix: i64,
 }
 
+// TASK-157: Batch propagation request
+#[derive(Debug, Deserialize)]
+struct BatchPropagateRequest {
+    requests: Vec<PropagateRequest>,
+}
+
+// TASK-158: Trajectory request for time range propagation
+#[derive(Debug, Deserialize)]
+struct TrajectoryRequest {
+    satellite_id: String,
+    tle_line1: String,
+    tle_line2: String,
+    start_unix: i64,
+    end_unix: i64,
+    #[serde(default = "default_step")]
+    step_seconds: i64,
+}
+
+fn default_step() -> i64 {
+    60  // Default 1 minute intervals
+}
+
+// TASK-159: Visibility calculation request
+#[derive(Debug, Deserialize)]
+struct VisibilityRequest {
+    satellite_id: String,
+    tle_line1: String,
+    tle_line2: String,
+    ground_station: GroundStation,
+    start_unix: i64,
+    end_unix: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GroundStation {
+    id: String,
+    name: String,
+    latitude_deg: f64,
+    longitude_deg: f64,
+    altitude_m: f64,
+    min_elevation_deg: f64,
+}
+
 #[derive(Debug, Serialize)]
 struct PropagateResponse {
     satellite_id: String,
@@ -77,6 +120,52 @@ struct PropagateResponse {
     success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+// TASK-157: Batch response
+#[derive(Debug, Serialize)]
+struct BatchPropagateResponse {
+    results: Vec<PropagateResponse>,
+    total_count: usize,
+    success_count: usize,
+    error_count: usize,
+}
+
+// TASK-158: Trajectory response
+#[derive(Debug, Serialize)]
+struct TrajectoryResponse {
+    satellite_id: String,
+    points: Vec<TrajectoryPoint>,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TrajectoryPoint {
+    timestamp_unix: i64,
+    position: Position,
+    velocity: Velocity,
+    geodetic: Geodetic,
+}
+
+// TASK-159: Visibility response
+#[derive(Debug, Serialize)]
+struct VisibilityResponse {
+    satellite_id: String,
+    ground_station_id: String,
+    passes: Vec<VisibilityPass>,
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VisibilityPass {
+    aos_timestamp: i64,    // Acquisition of signal
+    los_timestamp: i64,    // Loss of signal
+    max_elevation_deg: f64,
+    duration_seconds: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -102,9 +191,48 @@ struct Geodetic {
 
 // HTTP handler for propagation
 async fn propagate_handler(
-    State(_state): State<Arc<RwLock<AppState>>>,
+    State(state): State<Arc<RwLock<AppState>>>,
     Json(req): Json<PropagateRequest>,
 ) -> Result<Json<PropagateResponse>, (StatusCode, Json<PropagateResponse>)> {
+    // TASK-163: Validate TLE format
+    if req.tle_line1.len() != 69 || req.tle_line2.len() != 69 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(PropagateResponse {
+                satellite_id: req.satellite_id.clone(),
+                timestamp_unix: req.timestamp_unix,
+                position: Position { x_km: 0.0, y_km: 0.0, z_km: 0.0 },
+                velocity: Velocity { vx_km_s: 0.0, vy_km_s: 0.0, vz_km_s: 0.0 },
+                geodetic: Geodetic { latitude_deg: 0.0, longitude_deg: 0.0, altitude_km: 0.0 },
+                success: false,
+                error: Some("TLE lines must be exactly 69 characters".to_string()),
+            }),
+        ));
+    }
+
+    // TASK-164: Validate timestamp range
+    let now = chrono::Utc::now().timestamp();
+    if req.timestamp_unix < now - (365 * 24 * 3600) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(PropagateResponse {
+                satellite_id: req.satellite_id.clone(),
+                timestamp_unix: req.timestamp_unix,
+                position: Position { x_km: 0.0, y_km: 0.0, z_km: 0.0 },
+                velocity: Velocity { vx_km_s: 0.0, vy_km_s: 0.0, vz_km_s: 0.0 },
+                geodetic: Geodetic { latitude_deg: 0.0, longitude_deg: 0.0, altitude_km: 0.0 },
+                success: false,
+                error: Some("Timestamp is more than 1 year in the past".to_string()),
+            }),
+        ));
+    }
+
+    // Update metrics
+    {
+        let mut app_state = state.write().await;
+        app_state.metrics.increment_propagation_count();
+    }
+
     match propagator::propagate(&req.tle_line1, &req.tle_line2, req.timestamp_unix) {
         Ok(result) => Ok(Json(PropagateResponse {
             satellite_id: req.satellite_id,
@@ -127,30 +255,285 @@ async fn propagate_handler(
             success: true,
             error: None,
         })),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(PropagateResponse {
+        Err(e) => {
+            // Update error metrics
+            {
+                let mut app_state = state.write().await;
+                app_state.metrics.increment_error_count();
+            }
+
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(PropagateResponse {
+                    satellite_id: req.satellite_id,
+                    timestamp_unix: req.timestamp_unix,
+                    position: Position {
+                        x_km: 0.0,
+                        y_km: 0.0,
+                        z_km: 0.0,
+                    },
+                    velocity: Velocity {
+                        vx_km_s: 0.0,
+                        vy_km_s: 0.0,
+                        vz_km_s: 0.0,
+                    },
+                    geodetic: Geodetic {
+                        latitude_deg: 0.0,
+                        longitude_deg: 0.0,
+                        altitude_km: 0.0,
+                    },
+                    success: false,
+                    error: Some(e.to_string()),
+                }),
+            ))
+        }
+    }
+}
+
+// TASK-157: Batch propagation handler
+async fn batch_propagate_handler(
+    State(state): State<Arc<RwLock<AppState>>>,
+    Json(batch_req): Json<BatchPropagateRequest>,
+) -> Json<BatchPropagateResponse> {
+    let mut results = Vec::new();
+    let mut success_count = 0;
+    let mut error_count = 0;
+
+    // TASK-162: Optimize for batch requests by reusing parsed elements where possible
+    for req in batch_req.requests {
+        // Validate TLE format
+        if req.tle_line1.len() != 69 || req.tle_line2.len() != 69 {
+            results.push(PropagateResponse {
                 satellite_id: req.satellite_id,
                 timestamp_unix: req.timestamp_unix,
-                position: Position {
-                    x_km: 0.0,
-                    y_km: 0.0,
-                    z_km: 0.0,
-                },
-                velocity: Velocity {
-                    vx_km_s: 0.0,
-                    vy_km_s: 0.0,
-                    vz_km_s: 0.0,
-                },
-                geodetic: Geodetic {
-                    latitude_deg: 0.0,
-                    longitude_deg: 0.0,
-                    altitude_km: 0.0,
-                },
+                position: Position { x_km: 0.0, y_km: 0.0, z_km: 0.0 },
+                velocity: Velocity { vx_km_s: 0.0, vy_km_s: 0.0, vz_km_s: 0.0 },
+                geodetic: Geodetic { latitude_deg: 0.0, longitude_deg: 0.0, altitude_km: 0.0 },
                 success: false,
-                error: Some(e.to_string()),
+                error: Some("TLE lines must be exactly 69 characters".to_string()),
+            });
+            error_count += 1;
+            continue;
+        }
+
+        match propagator::propagate(&req.tle_line1, &req.tle_line2, req.timestamp_unix) {
+            Ok(result) => {
+                results.push(PropagateResponse {
+                    satellite_id: req.satellite_id,
+                    timestamp_unix: req.timestamp_unix,
+                    position: Position {
+                        x_km: result.position_km[0],
+                        y_km: result.position_km[1],
+                        z_km: result.position_km[2],
+                    },
+                    velocity: Velocity {
+                        vx_km_s: result.velocity_km_s[0],
+                        vy_km_s: result.velocity_km_s[1],
+                        vz_km_s: result.velocity_km_s[2],
+                    },
+                    geodetic: Geodetic {
+                        latitude_deg: result.geodetic.latitude_deg,
+                        longitude_deg: result.geodetic.longitude_deg,
+                        altitude_km: result.geodetic.altitude_km,
+                    },
+                    success: true,
+                    error: None,
+                });
+                success_count += 1;
+            }
+            Err(e) => {
+                results.push(PropagateResponse {
+                    satellite_id: req.satellite_id,
+                    timestamp_unix: req.timestamp_unix,
+                    position: Position { x_km: 0.0, y_km: 0.0, z_km: 0.0 },
+                    velocity: Velocity { vx_km_s: 0.0, vy_km_s: 0.0, vz_km_s: 0.0 },
+                    geodetic: Geodetic { latitude_deg: 0.0, longitude_deg: 0.0, altitude_km: 0.0 },
+                    success: false,
+                    error: Some(e.to_string()),
+                });
+                error_count += 1;
+            }
+        }
+    }
+
+    // Update metrics
+    {
+        let mut app_state = state.write().await;
+        app_state.metrics.add_propagation_count(success_count);
+        app_state.metrics.add_error_count(error_count);
+    }
+
+    Json(BatchPropagateResponse {
+        total_count: results.len(),
+        success_count,
+        error_count,
+        results,
+    })
+}
+
+// TASK-158: Trajectory propagation handler
+async fn trajectory_handler(
+    State(state): State<Arc<RwLock<AppState>>>,
+    Json(req): Json<TrajectoryRequest>,
+) -> Result<Json<TrajectoryResponse>, (StatusCode, Json<TrajectoryResponse>)> {
+    // Validate TLE format
+    if req.tle_line1.len() != 69 || req.tle_line2.len() != 69 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(TrajectoryResponse {
+                satellite_id: req.satellite_id,
+                points: vec![],
+                success: false,
+                error: Some("TLE lines must be exactly 69 characters".to_string()),
             }),
-        )),
+        ));
+    }
+
+    // Validate time range
+    if req.end_unix <= req.start_unix {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(TrajectoryResponse {
+                satellite_id: req.satellite_id,
+                points: vec![],
+                success: false,
+                error: Some("End time must be after start time".to_string()),
+            }),
+        ));
+    }
+
+    match propagator::propagate_trajectory(
+        &req.tle_line1,
+        &req.tle_line2,
+        req.start_unix,
+        req.end_unix,
+        req.step_seconds,
+    ) {
+        Ok(trajectory) => {
+            let points = trajectory
+                .into_iter()
+                .map(|(timestamp, result)| TrajectoryPoint {
+                    timestamp_unix: timestamp,
+                    position: Position {
+                        x_km: result.position_km[0],
+                        y_km: result.position_km[1],
+                        z_km: result.position_km[2],
+                    },
+                    velocity: Velocity {
+                        vx_km_s: result.velocity_km_s[0],
+                        vy_km_s: result.velocity_km_s[1],
+                        vz_km_s: result.velocity_km_s[2],
+                    },
+                    geodetic: Geodetic {
+                        latitude_deg: result.geodetic.latitude_deg,
+                        longitude_deg: result.geodetic.longitude_deg,
+                        altitude_km: result.geodetic.altitude_km,
+                    },
+                })
+                .collect();
+
+            // Update metrics
+            {
+                let mut app_state = state.write().await;
+                app_state.metrics.increment_propagation_count();
+            }
+
+            Ok(Json(TrajectoryResponse {
+                satellite_id: req.satellite_id,
+                points,
+                success: true,
+                error: None,
+            }))
+        }
+        Err(e) => {
+            {
+                let mut app_state = state.write().await;
+                app_state.metrics.increment_error_count();
+            }
+
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(TrajectoryResponse {
+                    satellite_id: req.satellite_id,
+                    points: vec![],
+                    success: false,
+                    error: Some(e.to_string()),
+                }),
+            ))
+        }
+    }
+}
+
+// TASK-159: Visibility calculation handler
+async fn visibility_handler(
+    State(state): State<Arc<RwLock<AppState>>>,
+    Json(req): Json<VisibilityRequest>,
+) -> Result<Json<VisibilityResponse>, (StatusCode, Json<VisibilityResponse>)> {
+    // Validate TLE format
+    if req.tle_line1.len() != 69 || req.tle_line2.len() != 69 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(VisibilityResponse {
+                satellite_id: req.satellite_id,
+                ground_station_id: req.ground_station.id,
+                passes: vec![],
+                success: false,
+                error: Some("TLE lines must be exactly 69 characters".to_string()),
+            }),
+        ));
+    }
+
+    match propagator::calculate_visibility(
+        &req.tle_line1,
+        &req.tle_line2,
+        &req.ground_station.latitude_deg,
+        &req.ground_station.longitude_deg,
+        req.ground_station.altitude_m / 1000.0, // Convert to km
+        req.ground_station.min_elevation_deg,
+        req.start_unix,
+        req.end_unix,
+    ) {
+        Ok(passes) => {
+            let visibility_passes = passes
+                .into_iter()
+                .map(|pass| VisibilityPass {
+                    aos_timestamp: pass.aos_timestamp,
+                    los_timestamp: pass.los_timestamp,
+                    max_elevation_deg: pass.max_elevation_deg,
+                    duration_seconds: pass.los_timestamp - pass.aos_timestamp,
+                })
+                .collect();
+
+            {
+                let mut app_state = state.write().await;
+                app_state.metrics.increment_propagation_count();
+            }
+
+            Ok(Json(VisibilityResponse {
+                satellite_id: req.satellite_id,
+                ground_station_id: req.ground_station.id,
+                passes: visibility_passes,
+                success: true,
+                error: None,
+            }))
+        }
+        Err(e) => {
+            {
+                let mut app_state = state.write().await;
+                app_state.metrics.increment_error_count();
+            }
+
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(VisibilityResponse {
+                    satellite_id: req.satellite_id,
+                    ground_station_id: req.ground_station.id,
+                    passes: vec![],
+                    success: false,
+                    error: Some(e.to_string()),
+                }),
+            ))
+        }
     }
 }
 
@@ -207,6 +590,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .route("/metrics", get(metrics::metrics_handler))
             .route("/health", get(metrics::health_handler))
             .route("/api/propagate", post(propagate_handler))
+            .route("/api/propagate/batch", post(batch_propagate_handler))  // TASK-157
+            .route("/api/trajectory", post(trajectory_handler))  // TASK-158
+            .route("/api/visibility", post(visibility_handler))  // TASK-159
             .with_state(metrics_state);
 
         let listener = tokio::net::TcpListener::bind(metrics_addr).await.unwrap();

@@ -117,6 +117,147 @@ pub fn propagate_trajectory(
     Ok(results)
 }
 
+/// TASK-159: Visibility pass data
+#[derive(Debug, Clone)]
+pub struct VisibilityPass {
+    pub aos_timestamp: i64,
+    pub los_timestamp: i64,
+    pub max_elevation_deg: f64,
+}
+
+/// TASK-159: Calculate visibility passes for a ground station
+pub fn calculate_visibility(
+    tle_line1: &str,
+    tle_line2: &str,
+    gs_lat_deg: &f64,
+    gs_lon_deg: &f64,
+    gs_alt_km: f64,
+    min_elevation_deg: f64,
+    start_unix: i64,
+    end_unix: i64,
+) -> Result<Vec<VisibilityPass>, PropagationError> {
+    // Generate trajectory with 10-second steps for visibility calculation
+    let trajectory = propagate_trajectory(tle_line1, tle_line2, start_unix, end_unix, 10)?;
+
+    let mut passes = Vec::new();
+    let mut in_pass = false;
+    let mut pass_start: i64 = 0;
+    let mut max_elevation = 0.0;
+
+    for (timestamp, result) in trajectory {
+        let elevation = calculate_elevation(
+            &result.position_km,
+            *gs_lat_deg,
+            *gs_lon_deg,
+            gs_alt_km,
+            timestamp,
+        );
+
+        if elevation >= min_elevation_deg {
+            if !in_pass {
+                // Start of pass
+                in_pass = true;
+                pass_start = timestamp;
+                max_elevation = elevation;
+            } else {
+                // Update max elevation
+                if elevation > max_elevation {
+                    max_elevation = elevation;
+                }
+            }
+        } else if in_pass {
+            // End of pass
+            passes.push(VisibilityPass {
+                aos_timestamp: pass_start,
+                los_timestamp: timestamp,
+                max_elevation_deg: max_elevation,
+            });
+            in_pass = false;
+        }
+    }
+
+    // Handle case where pass is still active at end of time range
+    if in_pass {
+        passes.push(VisibilityPass {
+            aos_timestamp: pass_start,
+            los_timestamp: end_unix,
+            max_elevation_deg: max_elevation,
+        });
+    }
+
+    Ok(passes)
+}
+
+/// Calculate elevation angle from ground station to satellite
+fn calculate_elevation(
+    sat_position_eci: &[f64; 3],
+    gs_lat_deg: f64,
+    gs_lon_deg: f64,
+    gs_alt_km: f64,
+    timestamp: i64,
+) -> f64 {
+    // Convert ground station to ECEF
+    let gs_ecef = geodetic_to_ecef(gs_lat_deg, gs_lon_deg, gs_alt_km);
+
+    // Convert satellite ECI to ECEF
+    let gmst = calculate_gmst(timestamp);
+    let cos_gmst = gmst.cos();
+    let sin_gmst = gmst.sin();
+    let sat_ecef = [
+        sat_position_eci[0] * cos_gmst + sat_position_eci[1] * sin_gmst,
+        -sat_position_eci[0] * sin_gmst + sat_position_eci[1] * cos_gmst,
+        sat_position_eci[2],
+    ];
+
+    // Range vector from ground station to satellite
+    let range = [
+        sat_ecef[0] - gs_ecef[0],
+        sat_ecef[1] - gs_ecef[1],
+        sat_ecef[2] - gs_ecef[2],
+    ];
+
+    // Convert to SEZ (South-East-Zenith) coordinates
+    let lat_rad = gs_lat_deg.to_radians();
+    let lon_rad = gs_lon_deg.to_radians();
+
+    let sin_lat = lat_rad.sin();
+    let cos_lat = lat_rad.cos();
+    let sin_lon = lon_rad.sin();
+    let cos_lon = lon_rad.cos();
+
+    // Rotation matrix to SEZ
+    let s = sin_lat * cos_lon * range[0] + sin_lat * sin_lon * range[1] - cos_lat * range[2];
+    let e = -sin_lon * range[0] + cos_lon * range[1];
+    let z = cos_lat * cos_lon * range[0] + cos_lat * sin_lon * range[1] + sin_lat * range[2];
+
+    // Calculate elevation
+    let range_magnitude = (s * s + e * e + z * z).sqrt();
+    let elevation_rad = (z / range_magnitude).asin();
+    elevation_rad.to_degrees()
+}
+
+/// Convert geodetic coordinates to ECEF
+fn geodetic_to_ecef(lat_deg: f64, lon_deg: f64, alt_km: f64) -> [f64; 3] {
+    let lat_rad = lat_deg.to_radians();
+    let lon_rad = lon_deg.to_radians();
+
+    const A: f64 = 6378.137; // WGS84 equatorial radius in km
+    const E2: f64 = 0.00669437999014; // WGS84 first eccentricity squared
+
+    let sin_lat = lat_rad.sin();
+    let cos_lat = lat_rad.cos();
+    let sin_lon = lon_rad.sin();
+    let cos_lon = lon_rad.cos();
+
+    let n = A / (1.0 - E2 * sin_lat * sin_lat).sqrt();
+
+    [
+        (n + alt_km) * cos_lat * cos_lon,
+        (n + alt_km) * cos_lat * sin_lon,
+        (n * (1.0 - E2) + alt_km) * sin_lat,
+    ]
+}
+
 /// Convert TLE epoch to Unix timestamp
 fn tle_epoch_to_unix(elements: &Elements) -> f64 {
     // TLE epoch is in UTC
