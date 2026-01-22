@@ -26,6 +26,7 @@ export default function Layout({ children, connectionState = 'disconnected', isC
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/satellites', label: 'Satellites', icon: '🛰️' },
     { path: '/map', label: 'Map', icon: '🗺️' },
+    { path: '/ssa', label: 'SSA', icon: '🎯' },
   ]
 
   return (

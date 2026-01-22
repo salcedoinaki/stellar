@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import SatelliteList from './pages/SatelliteList'
 import SatelliteDetail from './pages/SatelliteDetail'
 import MapView from './pages/MapView'
+import SSADashboard from './pages/SSADashboard'
 import { useSocketConnection } from './hooks'
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="/satellites" element={<SatelliteList />} />
         <Route path="/satellites/:id" element={<SatelliteDetail />} />
         <Route path="/map" element={<MapView />} />
+        <Route path="/ssa" element={<SSADashboard />} />
       </Routes>
     </Layout>
   )

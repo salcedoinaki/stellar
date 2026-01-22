@@ -4,6 +4,7 @@ defmodule StellarWeb.UserSocket do
   channel "satellites:*", StellarWeb.SatelliteChannel
   channel "missions:*", StellarWeb.MissionChannel
   channel "alarms:*", StellarWeb.AlarmChannel
+  channel "ssa:*", StellarWeb.SSAChannel
 
   @impl true
   def connect(_params, socket, _connect_info) do
