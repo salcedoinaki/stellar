@@ -45,7 +45,10 @@ services:
       - MIX_ENV=dev
       - PHX_SERVER=true
       - PHX_HOST=localhost
-      - DATABASE_URL=ecto://postgres:postgres@db:5432/stellar_dev
+      - DATABASE_HOSTNAME=db
+      - DATABASE_USERNAME=postgres
+      - DATABASE_PASSWORD=postgres
+      - DATABASE_NAME=stellar_dev
       - ORBITAL_SERVICE_HOST=orbital:50051
     depends_on:
       db:
