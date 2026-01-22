@@ -1,11 +1,21 @@
 defmodule StellarCore.OrbitalTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias StellarCore.Orbital
+  alias StellarCore.Orbital.Cache
+  alias StellarCore.Orbital.CircuitBreaker
 
   # ISS TLE (example - will be outdated but works for testing)
   @iss_tle_line1 "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025"
   @iss_tle_line2 "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999"
+
+  setup do
+    # Clear cache before each test
+    Cache.clear()
+    # Reset circuit breaker
+    :fuse.reset(:orbital_service)
+    :ok
+  end
 
   describe "propagate_position/4" do
     test "returns position data with valid inputs" do
