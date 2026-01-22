@@ -242,6 +242,20 @@ defmodule StellarData.GroundStations do
   end
 
   @doc """
+  Lists upcoming contact windows within a time range.
+  """
+  def list_upcoming_contact_windows(start_time, end_time) do
+    ContactWindow
+    |> where([w], w.aos >= ^start_time and w.aos <= ^end_time)
+    |> where([w], w.status == :scheduled)
+    |> join(:inner, [w], g in GroundStation, on: w.ground_station_id == g.id)
+    |> where([_w, g], g.status == :online)
+    |> order_by([w, _g], asc: w.aos)
+    |> preload(:ground_station)
+    |> Repo.all()
+  end
+
+  @doc """
   Deletes contact windows that have passed (LOS < now).
   """
   def delete_past_contact_windows do
