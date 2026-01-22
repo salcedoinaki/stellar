@@ -1,0 +1,303 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  MIX_ENV: test
+  ELIXIR_VERSION: '1.15.7'
+  OTP_VERSION: '26.1'
+  NODE_VERSION: '20'
+  RUST_VERSION: 'stable'
+
+jobs:
+  # ============================================================================
+  # Elixir Backend Tests
+  # ============================================================================
+  elixir-test:
+    name: Elixir Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stellar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        working-directory: stellarops
+        run: mix deps.get
+
+      - name: Compile project
+        working-directory: stellarops
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        working-directory: stellarops
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/stellar_test
+        run: mix test
+
+      - name: Check formatting
+        working-directory: stellarops
+        run: mix format --check-formatted
+
+  # ============================================================================
+  # Elixir Static Analysis
+  # ============================================================================
+  elixir-quality:
+    name: Elixir Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Restore PLT cache
+        uses: actions/cache@v3
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-dialyzer-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-dialyzer-
+
+      - name: Install dependencies
+        working-directory: stellarops
+        run: mix deps.get
+
+      - name: Run Credo
+        working-directory: stellarops
+        run: mix credo --strict
+        continue-on-error: true
+
+      # Dialyzer is slow, only run on main/develop
+      - name: Run Dialyzer
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+        working-directory: stellarops
+        run: mix dialyzer
+        continue-on-error: true
+
+  # ============================================================================
+  # Rust Orbital Service Tests
+  # ============================================================================
+  rust-test:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy, rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'stellarops/services/orbital_service'
+
+      - name: Check formatting
+        working-directory: stellarops/services/orbital_service
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        working-directory: stellarops/services/orbital_service
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        working-directory: stellarops/services/orbital_service
+        run: cargo test
+
+      - name: Build release
+        working-directory: stellarops/services/orbital_service
+        run: cargo build --release
+
+  # ============================================================================
+  # Frontend Tests
+  # ============================================================================
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: stellarops/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: stellarops/frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: stellarops/frontend
+        run: npm run typecheck
+        continue-on-error: true
+
+      - name: Lint
+        working-directory: stellarops/frontend
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Run tests
+        working-directory: stellarops/frontend
+        run: npm test -- --passWithNoTests
+
+      - name: Build
+        working-directory: stellarops/frontend
+        run: npm run build
+
+  # ============================================================================
+  # Security Scan
+  # ============================================================================
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install dependencies
+        working-directory: stellarops
+        run: mix deps.get
+
+      - name: Run mix audit
+        working-directory: stellarops
+        run: mix deps.audit
+        continue-on-error: true
+
+      - name: Run Sobelow security scan
+        working-directory: stellarops
+        run: mix sobelow --config
+        continue-on-error: true
+
+      - name: Rust security audit
+        working-directory: stellarops/services/orbital_service
+        run: |
+          cargo install cargo-audit
+          cargo audit
+        continue-on-error: true
+
+      - name: NPM audit
+        working-directory: stellarops/frontend
+        run: npm audit --production
+        continue-on-error: true
+
+  # ============================================================================
+  # Docker Build
+  # ============================================================================
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [elixir-test, rust-test, frontend-test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+
+      # Build Backend
+      - name: Build Backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops
+          file: stellarops/infrastructure/docker/Dockerfile.elixir.prod
+          push: true
+          tags: ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build Frontend
+      - name: Build Frontend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/frontend
+          file: stellarops/infrastructure/docker/Dockerfile.frontend.prod
+          push: true
+          tags: ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build Orbital Service
+      - name: Build Orbital Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: stellarops/services/orbital_service
+          file: stellarops/infrastructure/docker/Dockerfile.rust.prod
+          push: true
+          tags: ghcr.io/${{ github.repository }}/orbital:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

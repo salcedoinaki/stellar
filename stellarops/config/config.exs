@@ -23,7 +23,7 @@ config :stellar_data, StellarData.Repo,
 # Logger configuration
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :satellite_id]
+  metadata: [:request_id, :satellite_id, :user_id]
 
 # PromEx configuration - disable Grafana Agent to avoid OctoFetch dependency
 config :stellar_web, StellarWeb.PromEx,
@@ -31,6 +31,14 @@ config :stellar_web, StellarWeb.PromEx,
   manual_metrics_start_delay: :no_delay,
   drop_metrics_groups: [],
   grafana_agent: :disabled
+
+# Guardian JWT configuration
+config :stellar_web, StellarWeb.Auth.Guardian,
+  issuer: "stellar_ops",
+  # This should be overridden in prod via SECRET_KEY_BASE
+  secret_key: "development_secret_key_override_in_production",
+  ttl: {12, :hour},
+  allowed_algos: ["HS512"]
 
 # Import environment specific config
 import_config "#{config_env()}.exs"

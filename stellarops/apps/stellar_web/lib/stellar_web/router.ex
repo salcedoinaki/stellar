@@ -16,6 +16,35 @@ defmodule StellarWeb.Router do
     plug RateLimiter, limit: 30, window_ms: 60_000, category: "api_strict"
   end
 
+  pipeline :authenticated do
+    plug :accepts, ["json"]
+    plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
+    plug StellarWeb.Auth.Pipeline
+    plug StellarWeb.Auth.EnsureAuthenticated
+  end
+
+  pipeline :maybe_authenticated do
+    plug :accepts, ["json"]
+    plug StellarWeb.Auth.Pipeline
+  end
+
+  # Public authentication endpoints
+  scope "/api/auth", StellarWeb do
+    pipe_through :api
+
+    post "/login", AuthController, :login
+  end
+
+  # Protected authentication endpoints
+  scope "/api/auth", StellarWeb do
+    pipe_through :authenticated
+
+    post "/logout", AuthController, :logout
+    post "/refresh", AuthController, :refresh
+    get "/me", AuthController, :me
+    post "/change-password", AuthController, :change_password
+  end
+
   scope "/api", StellarWeb do
     pipe_through :api
 
