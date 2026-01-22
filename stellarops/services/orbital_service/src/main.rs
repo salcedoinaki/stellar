@@ -10,6 +10,9 @@ mod metrics;
 mod propagator;
 mod service;
 
+#[cfg(test)]
+mod tests;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
