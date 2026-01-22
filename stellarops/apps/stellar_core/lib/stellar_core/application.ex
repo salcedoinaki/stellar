@@ -22,6 +22,8 @@ defmodule StellarCore.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # HTTP client for orbital service with connection pooling
+      StellarCore.Orbital.HttpClient,
       # Phase 2: Registry for satellite process lookup
       Registry,
       # Phase 2: DynamicSupervisor for satellite processes
