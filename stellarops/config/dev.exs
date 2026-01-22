@@ -12,11 +12,12 @@ config :stellar_web, StellarWeb.Endpoint,
   watchers: []
 
 # StellarData Postgres (dev)
+# Use DATABASE_HOSTNAME env var for flexibility between Docker and local dev
 config :stellar_data, StellarData.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "db",
-  database: "stellar_dev",
+  username: System.get_env("DATABASE_USERNAME", "postgres"),
+  password: System.get_env("DATABASE_PASSWORD", "postgres"),
+  hostname: System.get_env("DATABASE_HOSTNAME", "localhost"),
+  database: System.get_env("DATABASE_NAME", "stellar_dev"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
