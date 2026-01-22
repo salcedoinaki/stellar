@@ -158,6 +158,233 @@ export async function checkOrbitalHealth(): Promise<{ status: string; uptime_sec
 }
 
 // ============================================================================
+// Space Objects API (SSA)
+// ============================================================================
+
+export interface SpaceObjectFilters {
+  object_type?: string
+  threat_level?: string
+  owner?: string
+  orbit_type?: string
+  status?: string
+  limit?: number
+  offset?: number
+}
+
+export async function fetchSpaceObjects(filters?: SpaceObjectFilters): Promise<SpaceObject[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/space_objects${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
+  return data.data
+}
+
+export async function fetchSpaceObject(id: string): Promise<SpaceObject> {
+  const response = await fetch(`${API_BASE}/api/space_objects/${id}`)
+  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
+  return data.data
+}
+
+export async function fetchSpaceObjectByNorad(noradId: number): Promise<SpaceObject> {
+  const response = await fetch(`${API_BASE}/api/space_objects/norad/${noradId}`)
+  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
+  return data.data
+}
+
+export async function fetchHighThreatObjects(): Promise<SpaceObject[]> {
+  const response = await fetch(`${API_BASE}/api/space_objects/high_threat`)
+  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
+  return data.data
+}
+
+export async function fetchProtectedAssets(): Promise<SpaceObject[]> {
+  const response = await fetch(`${API_BASE}/api/space_objects/protected_assets`)
+  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
+  return data.data
+}
+
+export async function fetchDebrisObjects(): Promise<SpaceObject[]> {
+  const response = await fetch(`${API_BASE}/api/space_objects/debris`)
+  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
+  return data.data
+}
+
+export async function searchSpaceObjects(query: string): Promise<SpaceObject[]> {
+  const response = await fetch(`${API_BASE}/api/space_objects/search?q=${encodeURIComponent(query)}`)
+  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
+  return data.data
+}
+
+export async function updateThreatAssessment(
+  id: string, 
+  assessment: { threat_level?: string; intel_summary?: string; capabilities?: string[] }
+): Promise<SpaceObject> {
+  const response = await fetch(`${API_BASE}/api/space_objects/${id}/threat`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(assessment),
+  })
+  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
+  return data.data
+}
+
+// ============================================================================
+// Conjunctions API (SSA)
+// ============================================================================
+
+export interface ConjunctionFilters {
+  satellite_id?: string
+  severity?: string
+  status?: string
+  from?: string
+  to?: string
+  limit?: number
+  upcoming?: boolean
+}
+
+export async function fetchConjunctions(filters?: ConjunctionFilters): Promise<Conjunction[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/conjunctions${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
+  return data.data
+}
+
+export async function fetchCriticalConjunctions(): Promise<Conjunction[]> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/critical`)
+  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
+  return data.data
+}
+
+export async function fetchConjunction(id: string): Promise<Conjunction> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/${id}`)
+  const data = await handleResponse<ApiResponse<Conjunction>>(response)
+  return data.data
+}
+
+export async function fetchConjunctionStatistics(): Promise<ConjunctionStatistics> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/statistics`)
+  const data = await handleResponse<{ data: ConjunctionStatistics }>(response)
+  return data.data
+}
+
+export async function fetchDetectorStatus(): Promise<DetectorStatus> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/detector_status`)
+  const data = await handleResponse<{ data: DetectorStatus }>(response)
+  return data.data
+}
+
+export async function triggerScreening(): Promise<{ status: string; message: string }> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/trigger_screening`, {
+    method: 'POST',
+  })
+  return handleResponse(response)
+}
+
+export async function fetchConjunctionsForSatellite(satelliteId: string): Promise<Conjunction[]> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/satellite/${satelliteId}`)
+  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
+  return data.data
+}
+
+// ============================================================================
+// Course of Action (COA) API
+// ============================================================================
+
+export async function fetchCOAs(filters?: { satellite_id?: string; status?: string; limit?: number }): Promise<CourseOfAction[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/coas${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  return data.data
+}
+
+export async function fetchPendingCOAs(): Promise<CourseOfAction[]> {
+  const response = await fetch(`${API_BASE}/api/coas/pending`)
+  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  return data.data
+}
+
+export async function fetchUrgentCOAs(hours?: number): Promise<CourseOfAction[]> {
+  const url = hours 
+    ? `${API_BASE}/api/coas/urgent?hours=${hours}`
+    : `${API_BASE}/api/coas/urgent`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  return data.data
+}
+
+export async function fetchCOA(id: string): Promise<CourseOfAction> {
+  const response = await fetch(`${API_BASE}/api/coas/${id}`)
+  const data = await handleResponse<ApiResponse<CourseOfAction>>(response)
+  return data.data
+}
+
+export async function fetchCOAsForConjunction(conjunctionId: string): Promise<CourseOfAction[]> {
+  const response = await fetch(`${API_BASE}/api/coas/conjunction/${conjunctionId}`)
+  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  return data.data
+}
+
+export async function fetchRecommendedCOA(conjunctionId: string): Promise<CourseOfAction> {
+  const response = await fetch(`${API_BASE}/api/coas/conjunction/${conjunctionId}/recommended`)
+  const data = await handleResponse<ApiResponse<CourseOfAction>>(response)
+  return data.data
+}
+
+export async function approveCOA(id: string, approvedBy: string, notes?: string): Promise<CourseOfAction> {
+  const response = await fetch(`${API_BASE}/api/coas/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved_by: approvedBy, notes }),
+  })
+  const data = await handleResponse<ApiResponse<CourseOfAction>>(response)
+  return data.data
+}
+
+export async function rejectCOA(id: string, rejectedBy: string, notes?: string): Promise<CourseOfAction> {
+  const response = await fetch(`${API_BASE}/api/coas/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rejected_by: rejectedBy, notes }),
+  })
+  const data = await handleResponse<ApiResponse<CourseOfAction>>(response)
+  return data.data
+}
+
+export async function generateCOAs(conjunctionId: string): Promise<CourseOfAction[]> {
+  const response = await fetch(`${API_BASE}/api/coas/conjunction/${conjunctionId}/generate`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  return data.data
+}
+
+// ============================================================================
 // API Client Object
 // ============================================================================
 
@@ -182,6 +409,36 @@ export const api = {
   orbital: {
     propagate: propagatePosition,
     health: checkOrbitalHealth,
+  },
+  spaceObjects: {
+    list: fetchSpaceObjects,
+    get: fetchSpaceObject,
+    getByNorad: fetchSpaceObjectByNorad,
+    highThreat: fetchHighThreatObjects,
+    protectedAssets: fetchProtectedAssets,
+    debris: fetchDebrisObjects,
+    search: searchSpaceObjects,
+    updateThreat: updateThreatAssessment,
+  },
+  conjunctions: {
+    list: fetchConjunctions,
+    get: fetchConjunction,
+    critical: fetchCriticalConjunctions,
+    forSatellite: fetchConjunctionsForSatellite,
+    statistics: fetchConjunctionStatistics,
+    detectorStatus: fetchDetectorStatus,
+    triggerScreening: triggerScreening,
+  },
+  coa: {
+    list: fetchCOAs,
+    get: fetchCOA,
+    pending: fetchPendingCOAs,
+    urgent: fetchUrgentCOAs,
+    forConjunction: fetchCOAsForConjunction,
+    recommended: fetchRecommendedCOA,
+    approve: approveCOA,
+    reject: rejectCOA,
+    generate: generateCOAs,
   },
 }
 
