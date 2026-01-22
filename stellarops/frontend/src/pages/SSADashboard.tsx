@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSSAStore } from '../store/ssaStore'
+import { useSSAChannel } from '../hooks/useSSAChannel'
 import { ThreatMap } from '../components/ThreatMap'
 import { ConjunctionCard } from '../components/ConjunctionCard'
 import type { Conjunction } from '../types'
@@ -34,10 +35,29 @@ export function SSADashboard() {
   const [activeTab, setActiveTab] = useState<'map' | 'list'>('map')
   const [refreshing, setRefreshing] = useState(false)
 
+  // Real-time SSA event handlers
+  const handleConjunctionDetected = useCallback((conjunction: Conjunction) => {
+    console.log('[SSA] New conjunction detected:', conjunction.id)
+    // Could show a notification here
+  }, [])
+
+  const handleScreeningComplete = useCallback((results: { found: number; screened: number }) => {
+    console.log('[SSA] Screening complete:', results)
+    // Refresh data after screening
+    fetchCriticalConjunctions()
+    fetchConjunctionStats()
+  }, [fetchCriticalConjunctions, fetchConjunctionStats])
+
+  // Subscribe to SSA WebSocket channel for real-time updates
+  const { triggerScreening: wsScreening } = useSSAChannel({
+    onConjunctionDetected: handleConjunctionDetected,
+    onScreeningComplete: handleScreeningComplete,
+  })
+
   // Initial data load
   useEffect(() => {
     loadAllData()
-    // Set up periodic refresh every 30 seconds
+    // Set up periodic refresh every 30 seconds (as fallback to WebSocket)
     const interval = setInterval(loadAllData, 30000)
     return () => clearInterval(interval)
   }, [])
