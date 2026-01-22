@@ -204,3 +204,5 @@ export interface ContactWindow {
   duration_seconds: number
   status: ContactWindowStatus
 }
+
+export type ContactWindowStatus = 'scheduled' | 'active' | 'completed' | 'missed'
