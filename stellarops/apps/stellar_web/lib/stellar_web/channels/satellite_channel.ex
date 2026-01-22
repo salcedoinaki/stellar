@@ -80,10 +80,7 @@ defmodule StellarWeb.SatelliteChannel do
   def handle_in("update_energy", %{"id" => id, "delta" => delta}, socket)
       when is_number(delta) do
     case Satellite.update_energy(id, delta) do
-      {:ok, :updated} ->
-        # Use non-blocking delay via Process.sleep (short enough to not block channel)
-        Process.sleep(5)
-        {:ok, state} = Satellite.get_state(id)
+      {:ok, state} ->
         broadcast!(socket, "satellite_updated", serialize_state(state))
         {:reply, {:ok, serialize_state(state)}, socket}
 
@@ -102,9 +99,7 @@ defmodule StellarWeb.SatelliteChannel do
 
       true ->
         case Satellite.set_mode(id, mode) do
-          {:ok, :updated} ->
-            Process.sleep(5)
-            {:ok, state} = Satellite.get_state(id)
+          {:ok, state} ->
             broadcast!(socket, "satellite_updated", serialize_state(state))
             {:reply, {:ok, serialize_state(state)}, socket}
 

@@ -31,7 +31,10 @@ defmodule StellarWeb.ConjunctionController do
     conjunction = Conjunctions.get_conjunction!(id)
     |> StellarData.Repo.preload(:object)
 
-    render(conn, :show, conjunction: conjunction)
+    # Get asset (satellite) details if available
+    asset_details = get_asset_details(conjunction.asset_id)
+
+    render(conn, :show, conjunction: conjunction, asset_details: asset_details)
   end
 
   @doc """
@@ -102,6 +105,27 @@ defmodule StellarWeb.ConjunctionController do
     case Integer.parse(value) do
       {int, _} -> int
       :error -> default
+    end
+  end
+
+  defp get_asset_details(asset_id) do
+    # Try to get satellite state from the running system
+    case StellarCore.Satellite.get_state(asset_id) do
+      {:ok, state} ->
+        %{
+          id: asset_id,
+          mode: state.mode,
+          energy: state.energy,
+          position: state.position,
+          status: "active"
+        }
+
+      {:error, _} ->
+        # Satellite might not be running, return basic info
+        %{
+          id: asset_id,
+          status: "unknown"
+        }
     end
   end
 end

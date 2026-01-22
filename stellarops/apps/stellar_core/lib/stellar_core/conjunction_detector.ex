@@ -21,14 +21,20 @@ defmodule StellarCore.ConjunctionDetector do
   @default_horizon_hours 24
   @default_step_seconds 60
 
-  # Miss distance thresholds in km (severity based on orbital regime)
-  @critical_threshold_km 1.0
-  @high_threshold_km 5.0
-  @medium_threshold_km 10.0
+  # Miss distance thresholds in km by orbital regime
+  @thresholds %{
+    leo: %{critical: 1.0, high: 5.0, medium: 10.0},
+    meo: %{critical: 5.0, high: 10.0, medium: 25.0},
+    geo: %{critical: 10.0, high: 25.0, medium: 50.0}
+  }
+
+  # Altitude boundaries for regimes (km)
+  @leo_max_altitude 2_000
+  @meo_max_altitude 35_786
 
   defmodule State do
     @moduledoc false
-    defstruct [:interval_ms, :horizon_hours, :step_seconds, :timer_ref]
+    defstruct [:interval_ms, :horizon_hours, :step_seconds, :timer_ref, :thresholds]
   end
 
   # Client API
@@ -58,11 +64,13 @@ defmodule StellarCore.ConjunctionDetector do
     interval_ms = Keyword.get(opts, :interval_ms, @default_interval_ms)
     horizon_hours = Keyword.get(opts, :horizon_hours, @default_horizon_hours)
     step_seconds = Keyword.get(opts, :step_seconds, @default_step_seconds)
+    thresholds = Keyword.get(opts, :thresholds, @thresholds)
 
     state = %State{
       interval_ms: interval_ms,
       horizon_hours: horizon_hours,
       step_seconds: step_seconds,
+      thresholds: thresholds,
       timer_ref: nil
     }
 
@@ -226,7 +234,7 @@ defmodule StellarCore.ConjunctionDetector do
           case find_closest_approach(asset_trajectory, object_trajectory) do
             {:ok, conjunction_data} ->
               # Create or update conjunction record
-              handle_conjunction(asset, object, conjunction_data)
+              handle_conjunction(asset, object, conjunction_data, state)
 
             {:error, :no_close_approach} ->
               []
@@ -240,19 +248,31 @@ defmodule StellarCore.ConjunctionDetector do
   end
 
   defp find_closest_approach(asset_trajectory, object_trajectory) do
-    # Build a map of object positions by timestamp for fast lookup
-    object_positions =
+    # Build maps of positions and velocities by timestamp for fast lookup
+    object_data =
       Enum.into(object_trajectory, %{}, fn point ->
-        {point.timestamp_unix, point.position}
+        {point.timestamp_unix, %{position: point.position, geodetic: point.geodetic}}
+      end)
+
+    asset_data =
+      Enum.into(asset_trajectory, %{}, fn point ->
+        {point.timestamp_unix, %{position: point.position, geodetic: point.geodetic}}
       end)
 
     # Find minimum distance between trajectories
     result =
       Enum.reduce_while(asset_trajectory, nil, fn asset_point, acc ->
-        object_pos = object_positions[asset_point.timestamp_unix]
+        object_info = object_data[asset_point.timestamp_unix]
 
-        if object_pos do
-          distance_km = calculate_distance(asset_point.position, object_pos)
+        if object_info do
+          distance_km = calculate_distance(asset_point.position, object_info.position)
+
+          # Estimate relative velocity from position changes
+          rel_velocity = calculate_relative_velocity(
+            asset_trajectory,
+            object_trajectory,
+            asset_point.timestamp_unix
+          )
 
           new_acc =
             case acc do
@@ -261,7 +281,10 @@ defmodule StellarCore.ConjunctionDetector do
                   distance_km: distance_km,
                   timestamp: asset_point.timestamp_unix,
                   asset_pos: asset_point.position,
-                  object_pos: object_pos
+                  object_pos: object_info.position,
+                  asset_geodetic: asset_point.geodetic,
+                  object_geodetic: object_info.geodetic,
+                  relative_velocity_km_s: rel_velocity
                 }
 
               %{distance_km: min_dist} when distance_km < min_dist ->
@@ -269,7 +292,10 @@ defmodule StellarCore.ConjunctionDetector do
                   distance_km: distance_km,
                   timestamp: asset_point.timestamp_unix,
                   asset_pos: asset_point.position,
-                  object_pos: object_pos
+                  object_pos: object_info.position,
+                  asset_geodetic: asset_point.geodetic,
+                  object_geodetic: object_info.geodetic,
+                  relative_velocity_km_s: rel_velocity
                 }
 
               _ ->
@@ -283,8 +309,15 @@ defmodule StellarCore.ConjunctionDetector do
       end)
 
     case result do
-      %{distance_km: dist} when dist < @medium_threshold_km ->
-        {:ok, result}
+      %{distance_km: dist, asset_geodetic: geodetic} ->
+        # Check against regime-specific threshold
+        max_threshold = get_max_threshold(geodetic.altitude_km)
+
+        if dist < max_threshold do
+          {:ok, result}
+        else
+          {:error, :no_close_approach}
+        end
 
       _ ->
         {:error, :no_close_approach}
@@ -298,16 +331,96 @@ defmodule StellarCore.ConjunctionDetector do
     :math.sqrt(dx * dx + dy * dy + dz * dz)
   end
 
-  defp handle_conjunction(asset, object, conjunction_data) do
+  defp calculate_relative_velocity(asset_trajectory, object_trajectory, timestamp) do
+    # Find the index of the current timestamp
+    asset_index = Enum.find_index(asset_trajectory, &(&1.timestamp_unix == timestamp))
+    object_by_ts = Enum.into(object_trajectory, %{}, &{&1.timestamp_unix, &1})
+
+    if asset_index && asset_index > 0 do
+      # Get current and previous points
+      current_asset = Enum.at(asset_trajectory, asset_index)
+      prev_asset = Enum.at(asset_trajectory, asset_index - 1)
+
+      current_object = object_by_ts[current_asset.timestamp_unix]
+      prev_object = object_by_ts[prev_asset.timestamp_unix]
+
+      if current_object && prev_object do
+        # Calculate position change for each object
+        dt = current_asset.timestamp_unix - prev_asset.timestamp_unix
+
+        if dt > 0 do
+          # Asset velocity vector
+          asset_dx = (current_asset.position.x_km - prev_asset.position.x_km) / dt
+          asset_dy = (current_asset.position.y_km - prev_asset.position.y_km) / dt
+          asset_dz = (current_asset.position.z_km - prev_asset.position.z_km) / dt
+
+          # Object velocity vector
+          object_dx = (current_object.position.x_km - prev_object.position.x_km) / dt
+          object_dy = (current_object.position.y_km - prev_object.position.y_km) / dt
+          object_dz = (current_object.position.z_km - prev_object.position.z_km) / dt
+
+          # Relative velocity magnitude
+          dvx = asset_dx - object_dx
+          dvy = asset_dy - object_dy
+          dvz = asset_dz - object_dz
+
+          :math.sqrt(dvx * dvx + dvy * dvy + dvz * dvz)
+        else
+          0.0
+        end
+      else
+        0.0
+      end
+    else
+      0.0
+    end
+  end
+
+  defp get_orbital_regime(altitude_km) do
+    cond do
+      altitude_km <= @leo_max_altitude -> :leo
+      altitude_km <= @meo_max_altitude -> :meo
+      true -> :geo
+    end
+  end
+
+  defp get_max_threshold(altitude_km) do
+    regime = get_orbital_regime(altitude_km)
+    thresholds = @thresholds[regime]
+    thresholds.medium
+  end
+
+  defp determine_severity(miss_distance_km, altitude_km, state) do
+    regime = get_orbital_regime(altitude_km)
+    thresholds = state.thresholds[regime]
+
+    cond do
+      miss_distance_km < thresholds.critical -> "critical"
+      miss_distance_km < thresholds.high -> "high"
+      miss_distance_km < thresholds.medium -> "medium"
+      true -> "low"
+    end
+  end
+
+  defp handle_conjunction(asset, object, conjunction_data, state) do
     tca = DateTime.from_unix!(conjunction_data.timestamp)
     miss_distance_km = conjunction_data.distance_km
-    severity = determine_severity(miss_distance_km)
+    relative_velocity_km_s = conjunction_data.relative_velocity_km_s || 0.0
+    altitude_km = conjunction_data.asset_geodetic.altitude_km
+
+    severity = determine_severity(miss_distance_km, altitude_km, state)
+
+    # Calculate simple probability based on miss distance and relative velocity
+    # This is a simplified model - real probability requires covariance data
+    probability = calculate_collision_probability(miss_distance_km, relative_velocity_km_s)
 
     attrs = %{
       asset_id: asset.id,
       object_id: object.id,
       tca: tca,
       miss_distance_km: miss_distance_km,
+      relative_velocity_km_s: relative_velocity_km_s,
+      probability_of_collision: probability,
       severity: severity,
       status: "active",
       asset_position_at_tca: %{
@@ -327,7 +440,8 @@ defmodule StellarCore.ConjunctionDetector do
         Logger.warning(
           "Conjunction detected: Asset #{asset.id} vs Object #{object.norad_id} " <>
             "at #{DateTime.to_iso8601(tca)}, miss distance: #{Float.round(miss_distance_km, 2)} km, " <>
-            "severity: #{severity}"
+            "relative velocity: #{Float.round(relative_velocity_km_s, 2)} km/s, " <>
+            "severity: #{severity}, probability: #{Float.round(probability * 100, 4)}%"
         )
 
         # Raise alarm for critical/high severity conjunctions
@@ -342,6 +456,12 @@ defmodule StellarCore.ConjunctionDetector do
           {:conjunction_detected, conjunction}
         )
 
+        Phoenix.PubSub.broadcast(
+          StellarData.PubSub,
+          "conjunctions:asset:#{asset.id}",
+          {:conjunction_detected, conjunction}
+        )
+
         [conjunction]
 
       {:error, changeset} ->
@@ -350,13 +470,22 @@ defmodule StellarCore.ConjunctionDetector do
     end
   end
 
-  defp determine_severity(miss_distance_km) do
-    cond do
-      miss_distance_km < @critical_threshold_km -> "critical"
-      miss_distance_km < @high_threshold_km -> "high"
-      miss_distance_km < @medium_threshold_km -> "medium"
-      true -> "low"
-    end
+  defp calculate_collision_probability(miss_distance_km, relative_velocity_km_s) do
+    # Simplified probability model using a Gaussian-like distribution
+    # Real implementation would use covariance matrices and full CDM analysis
+    
+    # Assume a combined uncertainty radius (very simplified)
+    uncertainty_km = 0.1 # 100 meters combined position uncertainty
+    
+    # Calculate probability based on miss distance relative to uncertainty
+    # This is a very simplified model for demonstration
+    sigma = uncertainty_km + (relative_velocity_km_s * 0.01) # Velocity adds uncertainty
+    
+    # Use exponential decay model
+    probability = :math.exp(-1 * (miss_distance_km * miss_distance_km) / (2 * sigma * sigma))
+    
+    # Clamp to reasonable range
+    min(probability, 1.0)
   end
 
   defp raise_conjunction_alarm(conjunction, asset, object) do

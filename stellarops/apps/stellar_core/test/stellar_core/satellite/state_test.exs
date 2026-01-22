@@ -87,11 +87,26 @@ defmodule StellarCore.Satellite.StateTest do
   end
 
   describe "update_position/2" do
-    test "updates position" do
+    test "updates position with float coordinates" do
       state = State.new("SAT-001")
       updated = State.update_position(state, {1000.0, 2000.0, 3000.0})
 
       assert updated.position == {1000.0, 2000.0, 3000.0}
+    end
+
+    test "updates position with integer coordinates" do
+      state = State.new("SAT-001")
+      updated = State.update_position(state, {1000, 2000, 3000})
+
+      # Integers are converted to floats
+      assert updated.position == {1000.0, 2000.0, 3000.0}
+    end
+
+    test "updates position with mixed integer and float coordinates" do
+      state = State.new("SAT-001")
+      updated = State.update_position(state, {1000, 2000.5, 3000})
+
+      assert updated.position == {1000.0, 2000.5, 3000.0}
     end
   end
 

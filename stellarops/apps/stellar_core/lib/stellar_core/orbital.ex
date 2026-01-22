@@ -6,11 +6,12 @@ defmodule StellarCore.Orbital do
   for satellite position calculations using SGP4.
 
   Uses HTTP/JSON endpoints exposed by the Rust service on port 9090.
+  Includes circuit breaker and caching for reliability and performance.
   """
 
   require Logger
   
-  alias StellarCore.Orbital.HttpClient
+  alias StellarCore.Orbital.{HttpClient, CircuitBreaker, Cache}
 
   @doc """
   Propagate satellite position from TLE at a given timestamp.
@@ -36,25 +37,42 @@ defmodule StellarCore.Orbital do
   def propagate_position(satellite_id, tle_line1, tle_line2, timestamp) do
     timestamp_unix = to_unix_timestamp(timestamp)
 
-    request = %{
-      satellite_id: satellite_id,
-      tle: %{
-        line1: tle_line1,
-        line2: tle_line2
-      },
-      timestamp_unix: timestamp_unix
-    }
+    # Check cache first
+    cache_key = Cache.propagation_key(satellite_id, tle_line1, tle_line2, timestamp_unix)
 
-    case call_grpc(:propagate_position, request) do
-      {:ok, %{"success" => true} = response} ->
-        {:ok, parse_propagate_response(response)}
+    Cache.fetch(cache_key, fn ->
+      request = %{
+        satellite_id: satellite_id,
+        tle: %{
+          line1: tle_line1,
+          line2: tle_line2
+        },
+        timestamp_unix: timestamp_unix
+      }
 
-      {:ok, %{"success" => false, "error_message" => error}} ->
-        {:error, {:propagation_failed, error}}
+      # Use circuit breaker for the call
+      CircuitBreaker.call(fn ->
+        case call_grpc(:propagate_position, request) do
+          {:ok, %{"success" => true} = response} ->
+            result = parse_propagate_response(response)
+            
+            # Emit telemetry
+            :telemetry.execute(
+              [:stellar_core, :orbital, :propagate_position],
+              %{cache: :miss},
+              %{satellite_id: satellite_id}
+            )
+            
+            {:ok, result}
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+          {:ok, %{"success" => false, "error_message" => error}} ->
+            {:error, {:propagation_failed, error}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end)
+    end)
   end
 
   @doc """
@@ -73,27 +91,47 @@ defmodule StellarCore.Orbital do
     - {:error, reason} on failure
   """
   def propagate_trajectory(satellite_id, tle_line1, tle_line2, start_time, end_time, step_seconds \\ 60) do
-    request = %{
-      satellite_id: satellite_id,
-      tle: %{
-        line1: tle_line1,
-        line2: tle_line2
-      },
-      start_timestamp_unix: to_unix_timestamp(start_time),
-      end_timestamp_unix: to_unix_timestamp(end_time),
-      step_seconds: step_seconds
-    }
+    start_ts = to_unix_timestamp(start_time)
+    end_ts = to_unix_timestamp(end_time)
 
-    case call_grpc(:propagate_trajectory, request) do
-      {:ok, %{"success" => true, "points" => points}} ->
-        {:ok, Enum.map(points, &parse_trajectory_point/1)}
+    # Check cache first
+    cache_key = Cache.trajectory_key(satellite_id, tle_line1, tle_line2, start_ts, end_ts, step_seconds)
 
-      {:ok, %{"success" => false, "error_message" => error}} ->
-        {:error, {:trajectory_failed, error}}
+    Cache.fetch(cache_key, fn ->
+      request = %{
+        satellite_id: satellite_id,
+        tle: %{
+          line1: tle_line1,
+          line2: tle_line2
+        },
+        start_timestamp_unix: start_ts,
+        end_timestamp_unix: end_ts,
+        step_seconds: step_seconds
+      }
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+      # Use circuit breaker for the call
+      CircuitBreaker.call(fn ->
+        case call_grpc(:propagate_trajectory, request) do
+          {:ok, %{"success" => true, "points" => points}} ->
+            result = Enum.map(points, &parse_trajectory_point/1)
+            
+            # Emit telemetry
+            :telemetry.execute(
+              [:stellar_core, :orbital, :propagate_trajectory],
+              %{cache: :miss, points: length(result)},
+              %{satellite_id: satellite_id}
+            )
+            
+            {:ok, result}
+
+          {:ok, %{"success" => false, "error_message" => error}} ->
+            {:error, {:trajectory_failed, error}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end)
+    end)
   end
 
   @doc """

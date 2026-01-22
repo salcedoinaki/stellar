@@ -45,35 +45,39 @@ defmodule StellarCore.Satellite.Server do
 
   @doc """
   Updates the satellite's energy by the given delta.
+  Returns `{:ok, new_state}` with the updated state.
   """
-  @spec update_energy(String.t() | pid(), float()) :: :ok
+  @spec update_energy(String.t() | pid(), float()) :: {:ok, State.t()}
   def update_energy(satellite, delta) when is_number(delta) do
-    GenServer.cast(resolve(satellite), {:update_energy, delta / 1})
+    GenServer.call(resolve(satellite), {:update_energy, delta / 1})
   end
 
   @doc """
   Sets the satellite's memory usage.
+  Returns `{:ok, new_state}` with the updated state.
   """
-  @spec update_memory(String.t() | pid(), float()) :: :ok
+  @spec update_memory(String.t() | pid(), float()) :: {:ok, State.t()}
   def update_memory(satellite, memory) when is_number(memory) and memory >= 0 do
-    GenServer.cast(resolve(satellite), {:update_memory, memory / 1})
+    GenServer.call(resolve(satellite), {:update_memory, memory / 1})
   end
 
   @doc """
   Manually sets the satellite's operational mode.
+  Returns `{:ok, new_state}` with the updated state.
   """
-  @spec set_mode(String.t() | pid(), State.mode()) :: :ok
+  @spec set_mode(String.t() | pid(), State.mode()) :: {:ok, State.t()}
   def set_mode(satellite, mode) when mode in [:nominal, :safe, :survival] do
-    GenServer.cast(resolve(satellite), {:set_mode, mode})
+    GenServer.call(resolve(satellite), {:set_mode, mode})
   end
 
   @doc """
   Updates the satellite's position.
+  Returns `{:ok, new_state}` with the updated state.
   """
-  @spec update_position(String.t() | pid(), {float(), float(), float()}) :: :ok
+  @spec update_position(String.t() | pid(), {float(), float(), float()}) :: {:ok, State.t()}
   def update_position(satellite, {x, y, z})
       when is_number(x) and is_number(y) and is_number(z) do
-    GenServer.cast(resolve(satellite), {:update_position, {x / 1, y / 1, z / 1}})
+    GenServer.call(resolve(satellite), {:update_position, {x / 1, y / 1, z / 1}})
   end
 
   # ============================================================================
@@ -95,27 +99,29 @@ defmodule StellarCore.Satellite.Server do
   end
 
   @impl true
-  def handle_cast({:update_energy, delta}, state) do
+  def handle_call({:update_energy, delta}, _from, state) do
     new_state = State.update_energy(state, delta)
     log_mode_change(state.mode, new_state.mode, state.id)
-    {:noreply, new_state}
+    {:reply, {:ok, new_state}, new_state}
   end
 
   @impl true
-  def handle_cast({:update_memory, memory}, state) do
-    {:noreply, State.update_memory(state, memory)}
+  def handle_call({:update_memory, memory}, _from, state) do
+    new_state = State.update_memory(state, memory)
+    {:reply, {:ok, new_state}, new_state}
   end
 
   @impl true
-  def handle_cast({:set_mode, mode}, state) do
+  def handle_call({:set_mode, mode}, _from, state) do
     new_state = State.set_mode(state, mode)
     log_mode_change(state.mode, new_state.mode, state.id)
-    {:noreply, new_state}
+    {:reply, {:ok, new_state}, new_state}
   end
 
   @impl true
-  def handle_cast({:update_position, position}, state) do
-    {:noreply, State.update_position(state, position)}
+  def handle_call({:update_position, position}, _from, state) do
+    new_state = State.update_position(state, position)
+    {:reply, {:ok, new_state}, new_state}
   end
 
   # ============================================================================

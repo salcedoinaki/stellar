@@ -57,22 +57,18 @@ defmodule StellarCore.Satellite.ServerTest do
       {:ok, pid: pid}
     end
 
-    test "updates energy level", %{pid: pid} do
-      Server.update_energy(pid, -50.0)
-      # Give the cast time to process
-      :timer.sleep(10)
+    test "updates energy level and returns new state", %{pid: pid} do
+      {:ok, new_state} = Server.update_energy(pid, -50.0)
 
-      state = Server.get_state(pid)
-      assert state.energy == 50.0
+      assert new_state.energy == 50.0
+      assert Server.get_state(pid).energy == 50.0
     end
 
     test "triggers mode change on low energy", %{pid: pid} do
-      Server.update_energy(pid, -85.0)
-      :timer.sleep(10)
+      {:ok, new_state} = Server.update_energy(pid, -85.0)
 
-      state = Server.get_state(pid)
-      assert state.energy == 15.0
-      assert state.mode == :safe
+      assert new_state.energy == 15.0
+      assert new_state.mode == :safe
     end
   end
 
@@ -83,12 +79,11 @@ defmodule StellarCore.Satellite.ServerTest do
       {:ok, pid: pid}
     end
 
-    test "updates memory usage", %{pid: pid} do
-      Server.update_memory(pid, 512.0)
-      :timer.sleep(10)
+    test "updates memory usage and returns new state", %{pid: pid} do
+      {:ok, new_state} = Server.update_memory(pid, 512.0)
 
-      state = Server.get_state(pid)
-      assert state.memory_used == 512.0
+      assert new_state.memory_used == 512.0
+      assert Server.get_state(pid).memory_used == 512.0
     end
   end
 
@@ -99,12 +94,11 @@ defmodule StellarCore.Satellite.ServerTest do
       {:ok, pid: pid}
     end
 
-    test "manually sets mode", %{pid: pid} do
-      Server.set_mode(pid, :safe)
-      :timer.sleep(10)
+    test "manually sets mode and returns new state", %{pid: pid} do
+      {:ok, new_state} = Server.set_mode(pid, :safe)
 
-      state = Server.get_state(pid)
-      assert state.mode == :safe
+      assert new_state.mode == :safe
+      assert Server.get_state(pid).mode == :safe
     end
   end
 
@@ -115,12 +109,17 @@ defmodule StellarCore.Satellite.ServerTest do
       {:ok, pid: pid}
     end
 
-    test "updates position", %{pid: pid} do
-      Server.update_position(pid, {1000.0, 2000.0, 3000.0})
-      :timer.sleep(10)
+    test "updates position with floats and returns new state", %{pid: pid} do
+      {:ok, new_state} = Server.update_position(pid, {1000.0, 2000.0, 3000.0})
 
-      state = Server.get_state(pid)
-      assert state.position == {1000.0, 2000.0, 3000.0}
+      assert new_state.position == {1000.0, 2000.0, 3000.0}
+      assert Server.get_state(pid).position == {1000.0, 2000.0, 3000.0}
+    end
+
+    test "updates position with integers and returns new state", %{pid: pid} do
+      {:ok, new_state} = Server.update_position(pid, {1000, 2000, 3000})
+
+      assert new_state.position == {1000.0, 2000.0, 3000.0}
     end
   end
 end

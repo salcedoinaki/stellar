@@ -24,6 +24,10 @@ defmodule StellarCore.Application do
     children = [
       # HTTP client for orbital service with connection pooling
       StellarCore.Orbital.HttpClient,
+      # Circuit breaker for orbital service
+      StellarCore.Orbital.CircuitBreaker,
+      # Cache for orbital service results
+      {StellarCore.Orbital.Cache, [ttl: :timer.minutes(5)]},
       # Phase 2: Registry for satellite process lookup
       Registry,
       # Phase 2: DynamicSupervisor for satellite processes
