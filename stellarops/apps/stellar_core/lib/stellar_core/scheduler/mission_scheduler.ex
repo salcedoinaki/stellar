@@ -288,9 +288,9 @@ defmodule StellarCore.Scheduler.MissionScheduler do
   defp execute_mission(mission) do
     satellite_id = mission.satellite_id
 
-    # Consume resources
-    with {:ok, _} <- Satellite.update_energy(satellite_id, -mission.required_energy),
-         {:ok, _} <- Satellite.update_memory(satellite_id, mission.required_memory) do
+    # Consume resources - now returns {:ok, :updated} tuples
+    with {:ok, :updated} <- Satellite.update_energy(satellite_id, -mission.required_energy),
+         {:ok, :updated} <- Satellite.update_memory(satellite_id, mission.required_memory) do
       # Simulate mission execution
       Process.sleep(min(mission.estimated_duration * 100, 10_000))
 

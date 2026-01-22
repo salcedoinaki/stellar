@@ -151,17 +151,14 @@ defmodule StellarWeb.PromEx.StellarPlugin do
   Called by the polling mechanism.
   """
   def fetch_satellite_metrics do
-    satellites = Satellite.Supervisor.list_satellites()
+    satellite_ids = Satellite.Supervisor.list_satellites()
     
     states = 
-      satellites
-      |> Enum.map(fn {_id, pid} ->
-        try do
-          Satellite.Server.get_state(pid)
-        rescue
-          _ -> nil
-        catch
-          :exit, _ -> nil
+      satellite_ids
+      |> Enum.map(fn id ->
+        case Satellite.get_state(id) do
+          {:ok, state} -> state
+          {:error, _} -> nil
         end
       end)
       |> Enum.reject(&is_nil/1)
@@ -203,7 +200,7 @@ defmodule StellarWeb.PromEx.StellarPlugin do
       # Emit average memory usage
       avg_memory =
         states
-        |> Enum.map(& &1.memory_usage)
+        |> Enum.map(& &1.memory_used)
         |> Enum.sum()
         |> Kernel./(count)
 
