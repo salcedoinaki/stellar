@@ -24,13 +24,13 @@ defmodule StellarData.Conjunctions.Conjunction do
     belongs_to :object, SpaceObject, foreign_key: :object_id
 
     # Conjunction metrics
-    field :tca, :utc_datetime, null: false
-    field :miss_distance_km, :float, null: false
+    field :tca, :utc_datetime
+    field :miss_distance_km, :float
     field :relative_velocity_km_s, :float
     field :probability_of_collision, :float
 
     # Classification
-    field :severity, :string, null: false
+    field :severity, :string
     field :status, :string, default: "active"
 
     # Positions at TCA (JSON: {x, y, z})

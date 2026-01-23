@@ -55,7 +55,7 @@ services:
         condition: service_healthy
     stdin_open: true
     tty: true
-    command: iex -S mix phx.server
+    command: sh -c "mix deps.get && mix deps.compile && mix ecto.create && mix ecto.migrate && iex -S mix phx.server"
 
   # ============================================================================
   # Rust Orbital Service (gRPC)
