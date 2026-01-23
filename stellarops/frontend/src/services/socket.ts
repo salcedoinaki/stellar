@@ -1,25 +1,47 @@
 import { Socket, Channel } from 'phoenix'
 
+// Get auth token from localStorage or auth store
+const getAuthToken = (): string | null => {
+  // Try localStorage first
+  const token = localStorage.getItem('access_token')
+  if (token) return token
+  
+  // Try sessionStorage as fallback
+  return sessionStorage.getItem('access_token')
+}
+
 class SocketService {
   private socket: Socket | null = null
   private channels: Map<string, Channel> = new Map()
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 5
 
-  connect(): void {
-    if (this.socket) return
+  connect(token?: string): void {
+    if (this.socket?.isConnected()) return
 
     const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:4000'
+    const authToken = token || getAuthToken()
+    
+    if (!authToken) {
+      console.warn('[Socket] No auth token available. Connection may fail for protected channels.')
+    }
     
     this.socket = new Socket(`${wsUrl}/socket`, {
-      params: { token: 'user-token' }, // In production, use proper auth tokens
+      params: { token: authToken },
       logger: (kind, msg, data) => {
         if (import.meta.env.DEV) {
           console.log(`[Socket ${kind}]`, msg, data)
         }
       },
+      reconnectAfterMs: (tries) => {
+        // Exponential backoff: 1s, 2s, 4s, 8s, 16s, then cap at 30s
+        return Math.min(1000 * Math.pow(2, tries), 30000)
+      },
     })
 
     this.socket.onOpen(() => {
       console.log('[Socket] Connected')
+      this.reconnectAttempts = 0
     })
 
     this.socket.onClose(() => {
@@ -28,9 +50,28 @@ class SocketService {
 
     this.socket.onError((error) => {
       console.error('[Socket] Error:', error)
+      this.reconnectAttempts++
+      
+      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+        console.error('[Socket] Max reconnect attempts reached')
+      }
     })
 
     this.socket.connect()
+  }
+
+  // Reconnect with a new token (e.g., after token refresh)
+  reconnect(newToken: string): void {
+    this.disconnect()
+    this.connect(newToken)
+  }
+
+  // Update token without full reconnect
+  updateToken(newToken: string): void {
+    if (this.socket) {
+      // Store new token for next connection
+      localStorage.setItem('access_token', newToken)
+    }
   }
 
   disconnect(): void {
