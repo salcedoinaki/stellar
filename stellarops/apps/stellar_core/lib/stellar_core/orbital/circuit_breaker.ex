@@ -8,13 +8,8 @@ defmodule StellarCore.Orbital.CircuitBreaker do
 
   require Logger
 
-  @fuse_name {:orbital_service, __MODULE__}
-  @fuse_opts [
-    # Standard fuse options
-    {:fuse_strategy, {:standard, 5, 10_000}},
-    # Reset after 30 seconds
-    {:fuse_refresh, 30_000}
-  ]
+  @fuse_name :orbital_service
+  @fuse_opts {{:standard, 5, 10_000}, {:reset, 30_000}}
 
   @doc """
   Initialize the circuit breaker.

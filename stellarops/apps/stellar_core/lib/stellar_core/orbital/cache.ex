@@ -19,7 +19,9 @@ defmodule StellarCore.Orbital.Cache do
 
     %{
       id: __MODULE__,
-      start: {Cachex, :start_link, [@cache_name, [expiration: expiration_opts(ttl)]]},
+      start: {Cachex, :start_link, [@cache_name, [
+        expiration: [default: ttl, interval: :timer.seconds(60), lazy: true]
+      ]]},
       type: :worker
     }
   end
@@ -83,13 +85,4 @@ defmodule StellarCore.Orbital.Cache do
     stats
   end
 
-  # Private functions
-
-  defp expiration_opts(ttl) do
-    [
-      default: ttl,
-      interval: :timer.seconds(60),
-      lazy: true
-    ]
-  end
 end
