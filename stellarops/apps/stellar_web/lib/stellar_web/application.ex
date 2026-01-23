@@ -16,6 +16,8 @@ defmodule StellarWeb.Application do
         StellarWeb.PromEx,
         # Start the PubSub system
         {Phoenix.PubSub, name: StellarWeb.PubSub},
+        # Start token revocation list (for JWT logout)
+        StellarWeb.Auth.TokenRevocation,
         # Start the Endpoint (http/https)
         StellarWeb.Endpoint
       ]

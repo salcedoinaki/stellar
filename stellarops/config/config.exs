@@ -25,6 +25,13 @@ config :logger, :console,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id, :satellite_id]
 
+# Guardian JWT configuration
+config :stellar_web, StellarWeb.Auth.Guardian,
+  issuer: "stellar_ops",
+  secret_key: "development_secret_key_replace_in_production",
+  ttl: {1, :hour},
+  allowed_drift: 60_000
+
 # PromEx configuration - disable Grafana Agent to avoid OctoFetch dependency
 config :stellar_web, StellarWeb.PromEx,
   disabled: false,

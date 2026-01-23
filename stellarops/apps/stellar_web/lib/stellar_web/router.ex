@@ -5,6 +5,7 @@ defmodule StellarWeb.Router do
   import Phoenix.Controller
 
   alias StellarWeb.Plugs.RateLimiter
+  alias StellarWeb.Auth.{Pipeline, AuthenticatedPipeline, EnsureRole}
 
   pipeline :api do
     plug :accepts, ["json"]
@@ -14,6 +15,36 @@ defmodule StellarWeb.Router do
   pipeline :api_strict do
     plug :accepts, ["json"]
     plug RateLimiter, limit: 30, window_ms: 60_000, category: "api_strict"
+  end
+
+  pipeline :api_auth do
+    plug :accepts, ["json"]
+    plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
+    plug AuthenticatedPipeline
+  end
+
+  pipeline :maybe_auth do
+    plug :accepts, ["json"]
+    plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
+    plug Pipeline
+  end
+
+  # Public auth endpoints (no auth required)
+  scope "/api/auth", StellarWeb do
+    pipe_through :api
+
+    post "/login", AuthController, :login
+    post "/refresh", AuthController, :refresh
+  end
+
+  # Protected auth endpoints
+  scope "/api/auth", StellarWeb do
+    pipe_through :api_auth
+
+    post "/logout", AuthController, :logout
+    post "/logout_all", AuthController, :logout_all
+    get "/me", AuthController, :me
+    post "/change_password", AuthController, :change_password
   end
 
   scope "/api", StellarWeb do
