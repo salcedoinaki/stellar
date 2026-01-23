@@ -227,4 +227,42 @@ defmodule StellarData.SpaceObjects do
 
   defp maybe_offset(query, nil), do: query
   defp maybe_offset(query, offset), do: offset(query, ^offset)
+
+  @doc """
+  Returns list of protected assets (our satellites that need protection).
+
+  Protected assets are typically active satellites that we own and want
+  to screen against other objects for collision avoidance.
+
+  ## Examples
+
+      iex> list_protected_assets()
+      [%SpaceObject{object_type: :satellite, status: :active}, ...]
+
+  """
+  def list_protected_assets do
+    SpaceObject
+    |> where([o], o.object_type == :satellite)
+    |> where([o], o.status == :active)
+    |> where([o], not is_nil(o.tle_line1) and not is_nil(o.tle_line2))
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns list of high threat space objects.
+
+  High threat objects are those with threat_level of :high or :critical.
+
+  ## Examples
+
+      iex> list_high_threat_objects()
+      [%SpaceObject{threat_level: :high}, ...]
+
+  """
+  def list_high_threat_objects do
+    SpaceObject
+    |> where([o], o.threat_level in [:high, :critical])
+    |> order_by([o], desc: o.threat_level)
+    |> Repo.all()
+  end
 end

@@ -147,9 +147,9 @@ defmodule StellarData.Conjunctions do
   """
   def list_active_conjunctions do
     Conjunction
-    |> where([c], c.status == "active")
+    |> where([c], c.status == :active)
     |> order_by([c], asc: c.tca)
-    |> preload(:object)
+    |> preload([:secondary_object])
     |> Repo.all()
   end
 
@@ -164,10 +164,10 @@ defmodule StellarData.Conjunctions do
   """
   def list_conjunctions_for_asset(asset_id) do
     Conjunction
-    |> where([c], c.asset_id == ^asset_id)
-    |> where([c], c.status in ["active", "monitoring"])
+    |> where([c], c.primary_object_id == ^asset_id or c.satellite_id == ^asset_id)
+    |> where([c], c.status in [:active, :monitoring])
     |> order_by([c], asc: c.tca)
-    |> preload(:object)
+    |> preload([:secondary_object])
     |> Repo.all()
   end
 
@@ -189,6 +189,68 @@ defmodule StellarData.Conjunctions do
   end
 
   @doc """
+  Lists upcoming conjunctions (TCA in the future).
+
+  ## Options
+    - :limit - Maximum results
+    - :offset - Pagination offset
+    - :preload - Associations to preload
+
+  ## Examples
+
+      iex> list_upcoming_conjunctions()
+      [%Conjunction{}, ...]
+
+  """
+  def list_upcoming_conjunctions(opts \\ []) do
+    now = DateTime.utc_now()
+
+    Conjunction
+    |> where([c], c.status in [:active, :monitoring, :predicted])
+    |> where([c], c.tca >= ^now)
+    |> apply_pagination(opts)
+    |> maybe_preload(opts[:preload])
+    |> order_by([c], asc: c.tca)
+    |> Repo.all()
+  end
+
+  @doc """
+  Lists conjunctions for a specific satellite.
+
+  ## Options
+    - :from - Start of time range
+    - :to - End of time range
+    - :limit - Maximum results
+
+  ## Examples
+
+      iex> list_conjunctions_for_satellite("SAT-001")
+      [%Conjunction{}, ...]
+
+  """
+  def list_conjunctions_for_satellite(satellite_id, opts \\ []) do
+    query = Conjunction
+    |> where([c], c.satellite_id == ^satellite_id)
+    |> where([c], c.status in [:active, :monitoring, :predicted])
+
+    query = case opts[:from] do
+      nil -> query
+      from -> where(query, [c], c.tca >= ^from)
+    end
+
+    query = case opts[:to] do
+      nil -> query
+      to -> where(query, [c], c.tca <= ^to)
+    end
+
+    query
+    |> limit(^(opts[:limit] || 100))
+    |> order_by([c], asc: c.tca)
+    |> preload([:secondary_object])
+    |> Repo.all()
+  end
+
+  @doc """
   Counts active conjunctions by severity.
 
   ## Examples
@@ -199,7 +261,7 @@ defmodule StellarData.Conjunctions do
   """
   def count_by_severity do
     Conjunction
-    |> where([c], c.status == "active")
+    |> where([c], c.status in [:active, :monitoring, :predicted])
     |> group_by([c], c.severity)
     |> select([c], {c.severity, count(c.id)})
     |> Repo.all()
@@ -220,10 +282,10 @@ defmodule StellarData.Conjunctions do
     next_24h = DateTime.add(now, 24 * 60 * 60, :second)
 
     Conjunction
-    |> where([c], c.status in ["active", "monitoring"])
-    |> where([c], c.severity in ["critical", "high"] or c.tca <= ^next_24h)
+    |> where([c], c.status in [:active, :monitoring, :predicted])
+    |> where([c], c.severity in [:critical, :high] or c.tca <= ^next_24h)
     |> order_by([c], asc: c.tca)
-    |> preload(:object)
+    |> preload([:secondary_object])
     |> Repo.all()
   end
 
@@ -245,27 +307,27 @@ defmodule StellarData.Conjunctions do
 
     total_active =
       Conjunction
-      |> where([c], c.status in ["active", "monitoring"])
+      |> where([c], c.status in [:active, :monitoring, :predicted])
       |> Repo.aggregate(:count, :id)
 
     upcoming_24h =
       Conjunction
-      |> where([c], c.status in ["active", "monitoring"])
+      |> where([c], c.status in [:active, :monitoring, :predicted])
       |> where([c], c.tca >= ^now and c.tca <= ^next_24h)
       |> Repo.aggregate(:count, :id)
 
     upcoming_7d =
       Conjunction
-      |> where([c], c.status in ["active", "monitoring"])
+      |> where([c], c.status in [:active, :monitoring, :predicted])
       |> where([c], c.tca >= ^now and c.tca <= ^next_7d)
       |> Repo.aggregate(:count, :id)
 
     %{
       total_active: total_active || 0,
-      critical: Map.get(by_severity, "critical", 0),
-      high: Map.get(by_severity, "high", 0),
-      medium: Map.get(by_severity, "medium", 0),
-      low: Map.get(by_severity, "low", 0),
+      critical: Map.get(by_severity, :critical, 0),
+      high: Map.get(by_severity, :high, 0),
+      medium: Map.get(by_severity, :medium, 0),
+      low: Map.get(by_severity, :low, 0),
       upcoming_24h: upcoming_24h || 0,
       upcoming_7d: upcoming_7d || 0
     }
@@ -286,17 +348,17 @@ defmodule StellarData.Conjunctions do
     now = DateTime.utc_now()
 
     Conjunction
-    |> where([c], c.status in ["active", "monitoring"])
+    |> where([c], c.status in [:active, :monitoring, :predicted])
     |> where([c], c.tca < ^now)
-    |> Repo.update_all(set: [status: "expired", updated_at: now])
+    |> Repo.update_all(set: [status: :passed, updated_at: now])
   end
 
   # Private functions
 
   defp apply_filters(query, opts) do
     Enum.reduce(opts, query, fn
-      {:asset_id, asset_id}, q ->
-        where(q, [c], c.asset_id == ^asset_id)
+      {:satellite_id, satellite_id}, q ->
+        where(q, [c], c.satellite_id == ^satellite_id)
 
       {:severity, severity}, q ->
         where(q, [c], c.severity == ^severity)
