@@ -53,6 +53,15 @@ defmodule StellarWeb.SpaceObjectController do
   Create a new space object.
   """
   def create(conn, %{"space_object" => space_object_params}) do
+    do_create(conn, space_object_params)
+  end
+
+  def create(conn, params) do
+    # Handle flat params (not nested under "space_object")
+    do_create(conn, params)
+  end
+
+  defp do_create(conn, space_object_params) do
     with {:ok, %SpaceObject{} = object} <- SpaceObjects.create_object(space_object_params) do
       conn
       |> put_status(:created)

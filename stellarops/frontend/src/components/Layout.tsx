@@ -41,11 +41,6 @@ export default function Layout({ children }: LayoutProps) {
     }
   }
 
-export default function Layout({ children }: LayoutProps) {
-  const location = useLocation()
-  const { satellites, isConnected } = useSatelliteStore()
-  const satelliteCount = satellites.size
-
   const navLinks = [
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/satellites', label: 'Satellites', icon: '🛰️' },
