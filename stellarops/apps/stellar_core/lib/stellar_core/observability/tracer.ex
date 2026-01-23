@@ -77,158 +77,59 @@ defmodule StellarCore.Observability.Tracer do
   Gets the current span ID. (No-op)
   """
   def current_span_id(), do: nil
-    OpenTelemetry.Span.add_event(ctx, name, map_to_attributes(attributes))
-  end
-
-  @doc """
-  Records an exception in the current span.
-  """
-  def record_exception(exception, stacktrace \\ nil) do
-    ctx = OpenTelemetry.Tracer.current_span_ctx()
-    OpenTelemetry.Span.record_exception(ctx, exception, stacktrace || [])
-    OpenTelemetry.Span.set_status(ctx, :error, Exception.message(exception))
-  end
 
   # ============================================================================
-  # Domain-Specific Span Helpers
+  # Domain-Specific Span Helpers (No-ops)
   # ============================================================================
 
   @doc """
-  Creates a span for satellite operations.
+  Creates a span for satellite operations. (No-op)
   """
-  defmacro satellite_span(satellite_id, operation, do: block) do
+  defmacro satellite_span(_satellite_id, _operation, do: block) do
     quote do
-      require OpenTelemetry.Tracer, as: OtelTracer
-      
-      OtelTracer.with_span "satellite.#{unquote(operation)}", %{
-        attributes: [
-          {"satellite.id", unquote(satellite_id)},
-          {"service.name", "stellar_core"},
-          {"operation.type", unquote(operation)}
-        ]
-      } do
-        unquote(block)
-      end
+      unquote(block)
     end
   end
 
   @doc """
-  Creates a span for SSA operations.
+  Creates a span for SSA operations. (No-op)
   """
-  defmacro ssa_span(operation, attributes \\ %{}, do: block) do
+  defmacro ssa_span(_operation, attributes \\ %{}, do: block) do
     quote do
-      require OpenTelemetry.Tracer, as: OtelTracer
-      
-      attrs = Map.merge(unquote(attributes), %{
-        "service.name" => "stellar_core",
-        "ssa.operation" => unquote(operation)
-      })
-      
-      OtelTracer.with_span "ssa.#{unquote(operation)}", %{
-        attributes: map_to_attributes(attrs)
-      } do
-        unquote(block)
-      end
+      _ = unquote(attributes)
+      unquote(block)
     end
   end
 
   @doc """
-  Creates a span for external API calls.
+  Creates a span for external API calls. (No-op)
   """
-  defmacro http_span(service, method, url, do: block) do
+  defmacro http_span(_service, _method, _url, do: block) do
     quote do
-      require OpenTelemetry.Tracer, as: OtelTracer
-      
-      OtelTracer.with_span "http.#{unquote(service)}", %{
-        kind: :client,
-        attributes: [
-          {"http.method", unquote(method)},
-          {"http.url", unquote(url)},
-          {"peer.service", unquote(service)}
-        ]
-      } do
-        unquote(block)
-      end
+      unquote(block)
     end
   end
 
   @doc """
-  Creates a span for database operations.
+  Creates a span for database operations. (No-op)
   """
-  defmacro db_span(operation, table, do: block) do
+  defmacro db_span(_operation, _table, do: block) do
     quote do
-      require OpenTelemetry.Tracer, as: OtelTracer
-      
-      OtelTracer.with_span "db.#{unquote(operation)}", %{
-        kind: :client,
-        attributes: [
-          {"db.system", "postgresql"},
-          {"db.operation", unquote(operation)},
-          {"db.sql.table", unquote(table)}
-        ]
-      } do
-        unquote(block)
-      end
+      unquote(block)
     end
   end
 
   # ============================================================================
-  # Context Propagation
+  # Context Propagation (No-ops)
   # ============================================================================
 
   @doc """
-  Extracts trace context from HTTP headers.
+  Extracts trace context from HTTP headers. (No-op)
   """
-  def extract_context(headers) when is_list(headers) do
-    :otel_propagator_text_map.extract(headers)
-  end
+  def extract_context(_headers), do: :ok
 
   @doc """
-  Injects trace context into HTTP headers.
+  Injects trace context into HTTP headers. (No-op)
   """
-  def inject_context(headers \\ []) do
-    :otel_propagator_text_map.inject(headers)
-  end
-
-  @doc """
-  Gets the current trace ID as a hex string.
-  """
-  def current_trace_id do
-    case OpenTelemetry.Tracer.current_span_ctx() do
-      :undefined -> nil
-      ctx -> 
-        trace_id = OpenTelemetry.Span.trace_id(ctx)
-        if trace_id != 0, do: Integer.to_string(trace_id, 16), else: nil
-    end
-  end
-
-  @doc """
-  Gets the current span ID as a hex string.
-  """
-  def current_span_id do
-    case OpenTelemetry.Tracer.current_span_ctx() do
-      :undefined -> nil
-      ctx ->
-        span_id = OpenTelemetry.Span.span_id(ctx)
-        if span_id != 0, do: Integer.to_string(span_id, 16), else: nil
-    end
-  end
-
-  # ============================================================================
-  # Helpers
-  # ============================================================================
-
-  @doc false
-  def map_to_attributes(map) when is_map(map) do
-    Enum.map(map, fn {k, v} -> {to_string(k), format_value(v)} end)
-  end
-  def map_to_attributes(list) when is_list(list), do: list
-  def map_to_attributes(_), do: []
-
-  defp format_value(v) when is_binary(v), do: v
-  defp format_value(v) when is_atom(v), do: to_string(v)
-  defp format_value(v) when is_number(v), do: v
-  defp format_value(v) when is_boolean(v), do: v
-  defp format_value(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-  defp format_value(v), do: inspect(v)
+  def inject_context(headers \\ []), do: headers
 end

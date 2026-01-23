@@ -40,6 +40,9 @@ defmodule StellarCore.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # PubSub for internal messaging
+      {Phoenix.PubSub, name: StellarCore.PubSub},
+      
       # Orbital service infrastructure
       StellarCore.Orbital.HttpClient,
       StellarCore.Orbital.CircuitBreaker,
