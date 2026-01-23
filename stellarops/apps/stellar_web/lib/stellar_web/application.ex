@@ -10,6 +10,15 @@ defmodule StellarWeb.Application do
 
   @impl true
   def start(_type, _args) do
+    # Create ETS table for rate limiting before starting children
+    :ets.new(:stellar_rate_limit, [
+      :named_table,
+      :set,
+      :public,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
     children =
       [
         # Start PromEx for metrics
