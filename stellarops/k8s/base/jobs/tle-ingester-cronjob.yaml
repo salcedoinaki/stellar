@@ -1,0 +1,90 @@
+# TLE Ingester CronJob
+# Periodically fetches TLE data from CelesTrak and Space-Track
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tle-ingester
+  labels:
+    app: tle-ingester
+    app.kubernetes.io/name: tle-ingester
+    app.kubernetes.io/component: ingestion
+    app.kubernetes.io/part-of: stellarops
+spec:
+  # Run every 6 hours
+  schedule: "0 */6 * * *"
+  # Keep last 3 successful and 1 failed job
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  # Don't start new job if previous is still running
+  concurrencyPolicy: Forbid
+  # Start within 1 hour of scheduled time
+  startingDeadlineSeconds: 3600
+  jobTemplate:
+    spec:
+      # Auto-delete after 1 hour
+      ttlSecondsAfterFinished: 3600
+      # Retry up to 3 times
+      backoffLimit: 3
+      # Timeout after 30 minutes
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: tle-ingester
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ingester
+              image: ghcr.io/stellarops/backend:latest
+              imagePullPolicy: Always
+              command:
+                - /app/bin/stellarops
+                - eval
+                - "StellarCore.TLEIngester.ingest_all()"
+              envFrom:
+                - configMapRef:
+                    name: backend-config
+                - secretRef:
+                    name: backend-secrets
+              env:
+                - name: CELESTRAK_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: external-api-secrets
+                      key: CELESTRAK_API_KEY
+                      optional: true
+                - name: SPACETRACK_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: external-api-secrets
+                      key: SPACETRACK_USER
+                      optional: true
+                - name: SPACETRACK_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: external-api-secrets
+                      key: SPACETRACK_PASSWORD
+                      optional: true
+              resources:
+                requests:
+                  memory: "256Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "512Mi"
+                  cpu: "500m"
+---
+# Service for the CronJob pods (for metrics scraping)
+apiVersion: v1
+kind: Service
+metadata:
+  name: tle-ingester
+  labels:
+    app: tle-ingester
+spec:
+  selector:
+    app: tle-ingester
+  ports:
+    - port: 4000
+      targetPort: 4000
+      name: http
+  clusterIP: None  # Headless service
