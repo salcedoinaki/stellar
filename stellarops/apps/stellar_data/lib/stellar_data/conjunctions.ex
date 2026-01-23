@@ -184,7 +184,7 @@ defmodule StellarData.Conjunctions do
     Conjunction
     |> where([c], c.tca >= ^start_time and c.tca <= ^end_time)
     |> order_by([c], asc: c.tca)
-    |> preload(:object)
+    |> preload([:primary_object, :secondary_object])
     |> Repo.all()
   end
 

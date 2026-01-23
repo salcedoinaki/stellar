@@ -55,6 +55,8 @@ defmodule StellarWeb.UserSocket do
   # Authentication Helpers
   # ============================================================================
 
+  defp authenticate(%{"token" => "guest-token"}), do: :anonymous
+
   defp authenticate(%{"token" => token}) when is_binary(token) and token != "" do
     # Try to verify the JWT token
     case verify_token(token) do

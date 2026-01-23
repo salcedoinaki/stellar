@@ -24,6 +24,7 @@ defmodule StellarCore.Application do
 
   alias StellarCore.Satellite.Registry
   alias StellarCore.Satellite.Supervisor, as: SatelliteSupervisor
+  alias StellarCore.Satellite.Loader, as: SatelliteLoader
   alias StellarCore.Satellite.HealthMonitor
   alias StellarCore.Scheduler.MissionScheduler
   alias StellarCore.Scheduler.DownlinkManager
@@ -51,6 +52,9 @@ defmodule StellarCore.Application do
       # Core infrastructure
       Registry,
       SatelliteSupervisor,
+      
+      # Load satellites from database
+      SatelliteLoader,
       
       # Task supervisor for background work
       {Task.Supervisor, name: StellarCore.TaskSupervisor},

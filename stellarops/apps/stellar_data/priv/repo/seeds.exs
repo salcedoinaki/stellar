@@ -5,7 +5,7 @@
 # Inside your Docker container:
 #     docker compose -f docker-compose.dev.yml run --rm backend mix run apps/stellar_data/priv/repo/seeds.exs
 
-alias StellarData.{Satellites, Telemetry, Commands}
+alias StellarData.{Satellites, Telemetry, Commands, SpaceObjects, Conjunctions}
 
 IO.puts("🛰️  Seeding StellarOps database...")
 
@@ -133,3 +133,236 @@ IO.puts("\n✅ Database seeding complete!")
 IO.puts("   #{length(satellites)} satellites")
 IO.puts("   #{length(telemetry_events)} telemetry events")
 IO.puts("   #{length(commands)} commands")
+
+# ============================================================================
+# SSA (Space Situational Awareness) Data
+# ============================================================================
+
+IO.puts("\n🌍 Creating space objects...")
+
+space_objects = [
+  %{
+    norad_id: 25544,
+    name: "ISS (ZARYA)",
+    international_designator: "1998-067A",
+    object_type: :satellite,
+    owner: "NASA/ESA/JAXA/CSA",
+    status: :active,
+    orbit_type: :leo,
+    inclination_deg: 51.64,
+    apogee_km: 422.0,
+    perigee_km: 418.0,
+    period_minutes: 92.9,
+    threat_level: :none,
+    classification: :unclassified,
+    is_protected_asset: true
+  },
+  %{
+    norad_id: 43013,
+    name: "COSMOS 2542",
+    international_designator: "2017-080A",
+    object_type: :satellite,
+    owner: "Russia",
+    status: :active,
+    orbit_type: :leo,
+    inclination_deg: 82.4,
+    apogee_km: 620.0,
+    perigee_km: 610.0,
+    period_minutes: 97.0,
+    threat_level: :medium,
+    classification: :unclassified,
+    intel_summary: "Russian inspection satellite with maneuvering capability"
+  },
+  %{
+    norad_id: 40258,
+    name: "CZ-2C DEB",
+    international_designator: "2014-065C",
+    object_type: :debris,
+    owner: "China",
+    status: :inactive,
+    orbit_type: :leo,
+    inclination_deg: 97.8,
+    apogee_km: 815.0,
+    perigee_km: 790.0,
+    period_minutes: 101.0,
+    threat_level: :low,
+    classification: :unclassified
+  },
+  %{
+    norad_id: 39771,
+    name: "COSMOS 2499",
+    international_designator: "2014-028E",
+    object_type: :satellite,
+    owner: "Russia",
+    status: :active,
+    orbit_type: :leo,
+    inclination_deg: 65.0,
+    apogee_km: 1175.0,
+    perigee_km: 1160.0,
+    period_minutes: 109.0,
+    threat_level: :high,
+    classification: :unclassified,
+    intel_summary: "Suspected anti-satellite capable spacecraft"
+  },
+  %{
+    norad_id: 26411,
+    name: "FENGYUN 1C DEB",
+    international_designator: "1999-025APM",
+    object_type: :debris,
+    owner: "China",
+    status: :inactive,
+    orbit_type: :sso,
+    inclination_deg: 98.6,
+    apogee_km: 865.0,
+    perigee_km: 855.0,
+    period_minutes: 102.0,
+    threat_level: :low,
+    classification: :unclassified,
+    notes: "Debris from 2007 ASAT test"
+  },
+  %{
+    norad_id: 45915,
+    name: "STARLINK-1095",
+    international_designator: "2020-035B",
+    object_type: :satellite,
+    owner: "SpaceX",
+    status: :active,
+    orbit_type: :leo,
+    inclination_deg: 53.0,
+    apogee_km: 550.0,
+    perigee_km: 545.0,
+    period_minutes: 95.6,
+    threat_level: :none,
+    classification: :unclassified
+  },
+  %{
+    norad_id: 48274,
+    name: "SHIJIAN-21",
+    international_designator: "2021-094A",
+    object_type: :satellite,
+    owner: "China",
+    status: :active,
+    orbit_type: :geo,
+    inclination_deg: 0.1,
+    apogee_km: 35800.0,
+    perigee_km: 35780.0,
+    period_minutes: 1436.0,
+    threat_level: :high,
+    classification: :unclassified,
+    intel_summary: "Active debris removal demonstrator with potential dual-use capability"
+  },
+  %{
+    norad_id: 49445,
+    name: "UNKNOWN OBJECT",
+    international_designator: "2021-UNK-001",
+    object_type: :unknown,
+    owner: "Unknown",
+    status: :unknown,
+    orbit_type: :heo,
+    inclination_deg: 63.4,
+    apogee_km: 39200.0,
+    perigee_km: 500.0,
+    period_minutes: 720.0,
+    threat_level: :critical,
+    classification: :unclassified,
+    intel_summary: "Unidentified object in highly elliptical orbit, monitoring required"
+  }
+]
+
+created_objects = 
+  for obj_attrs <- space_objects do
+    case SpaceObjects.create_object(obj_attrs) do
+      {:ok, obj} ->
+        IO.puts("  ✓ Created space object: #{obj.norad_id} (#{obj.name})")
+        obj
+
+      {:error, changeset} ->
+        IO.puts("  ✗ Failed to create space object: #{obj_attrs.norad_id}")
+        IO.inspect(changeset.errors)
+        nil
+    end
+  end
+  |> Enum.reject(&is_nil/1)
+
+# Create conjunctions
+IO.puts("\n⚠️  Creating conjunction events...")
+
+# Get some object IDs for conjunctions
+[iss, cosmos_2542, debris1, cosmos_2499 | _rest] = created_objects
+
+# Get satellite IDs
+sat_001 = "SAT-001"
+sat_003 = "SAT-003"
+
+now = DateTime.utc_now()
+
+conjunctions = [
+  %{
+    primary_object_id: iss.id,
+    secondary_object_id: debris1.id,
+    satellite_id: nil,
+    tca: DateTime.add(now, 2 * 24 * 3600, :second),
+    miss_distance_m: 450.0,
+    relative_velocity_ms: 14500.0,
+    collision_probability: 0.00012,
+    severity: :medium,
+    status: :predicted,
+    data_source: "18SDS"
+  },
+  %{
+    primary_object_id: nil,
+    secondary_object_id: cosmos_2542.id,
+    satellite_id: sat_001,
+    tca: DateTime.add(now, 8 * 3600, :second),
+    miss_distance_m: 1200.0,
+    relative_velocity_ms: 7800.0,
+    collision_probability: 0.000025,
+    severity: :low,
+    status: :monitoring,
+    data_source: "LeoLabs"
+  },
+  %{
+    primary_object_id: nil,
+    secondary_object_id: cosmos_2499.id,
+    satellite_id: sat_003,
+    tca: DateTime.add(now, 4 * 3600, :second),
+    miss_distance_m: 180.0,
+    relative_velocity_ms: 12300.0,
+    collision_probability: 0.0045,
+    severity: :critical,
+    status: :active,
+    data_source: "18SDS",
+    notes: "High-priority event - suspected ASAT proximity approach"
+  },
+  %{
+    primary_object_id: iss.id,
+    secondary_object_id: cosmos_2499.id,
+    satellite_id: nil,
+    tca: DateTime.add(now, 36 * 3600, :second),
+    miss_distance_m: 2500.0,
+    relative_velocity_ms: 9800.0,
+    collision_probability: 0.000001,
+    severity: :low,
+    status: :predicted,
+    data_source: "18SDS"
+  }
+]
+
+created_conjunctions =
+  for conj_attrs <- conjunctions do
+    case Conjunctions.create_conjunction(conj_attrs) do
+      {:ok, conj} ->
+        IO.puts("  ✓ Created conjunction: #{conj.id} (severity: #{conj.severity})")
+        conj
+
+      {:error, changeset} ->
+        IO.puts("  ✗ Failed to create conjunction")
+        IO.inspect(changeset.errors)
+        nil
+    end
+  end
+  |> Enum.reject(&is_nil/1)
+
+IO.puts("\n🔒 SSA data seeding complete!")
+IO.puts("   #{length(created_objects)} space objects")
+IO.puts("   #{length(created_conjunctions)} conjunctions")

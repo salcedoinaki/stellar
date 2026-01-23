@@ -26,3 +26,6 @@ config :stellar_data, StellarData.Repo,
 config :logger, :console,
   format: "[$level] $message\n",
   level: :debug
+
+# Allow anonymous WebSocket connections in development
+config :stellar_web, :allow_anonymous_websocket, true
