@@ -62,8 +62,8 @@ defmodule StellarWeb.ConjunctionController do
         |> json(%{error: "Conjunction not found"})
 
       conjunction ->
-        conjunction = StellarData.Repo.preload(conjunction, :object)
-        asset_details = get_asset_details(conjunction.asset_id)
+        conjunction = StellarData.Repo.preload(conjunction, [:primary_object, :secondary_object])
+        asset_details = get_asset_details(conjunction.satellite_id)
         render(conn, :show, conjunction: conjunction, asset_details: asset_details)
     end
   end
@@ -233,14 +233,13 @@ defmodule StellarWeb.ConjunctionController do
   defp build_query_opts(params) do
     [
       satellite_id: params["satellite_id"],
-      asset_id: params["asset_id"],
       severity: parse_atom(params["severity"]),
       status: parse_atom(params["status"]),
       from: parse_datetime(params["from"] || params["tca_after"]),
       to: parse_datetime(params["to"] || params["tca_before"]),
       limit: parse_integer(params["limit"], 50),
       offset: parse_integer(params["offset"], 0),
-      preload: [:object]
+      preload: [:primary_object, :secondary_object]
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
