@@ -49,6 +49,28 @@ lazy_static! {
         &["endpoint", "method"],
         vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
     ).unwrap();
+
+    // TASK-166: Propagation count metric
+    pub static ref PROPAGATION_COUNT: CounterVec = register_counter_vec!(
+        "orbital_propagation_total",
+        "Total number of orbital propagations performed",
+        &["status"]
+    ).unwrap();
+
+    // TASK-167: Propagation latency histogram (detailed)
+    pub static ref PROPAGATION_LATENCY_DETAILED: HistogramVec = register_histogram_vec!(
+        "orbital_propagation_latency_seconds",
+        "Histogram of propagation latency in seconds",
+        &["operation"],
+        vec![0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
+    ).unwrap();
+
+    // TASK-168: Error rate metric
+    pub static ref ERROR_COUNT: CounterVec = register_counter_vec!(
+        "orbital_errors_total",
+        "Total number of errors by type",
+        &["error_type"]
+    ).unwrap();
 }
 
 /// Metrics state for recording from service handlers
@@ -59,6 +81,39 @@ pub struct MetricsState {
 impl MetricsState {
     pub fn new() -> Self {
         Self {}
+    }
+
+    // TASK-166: Increment propagation count
+    pub fn increment_propagation_count(&mut self) {
+        PROPAGATION_COUNT.with_label_values(&["success"]).inc();
+    }
+
+    pub fn add_propagation_count(&mut self, count: usize) {
+        PROPAGATION_COUNT
+            .with_label_values(&["success"])
+            .inc_by(count as f64);
+    }
+
+    // TASK-168: Increment error count
+    pub fn increment_error_count(&mut self) {
+        ERROR_COUNT.with_label_values(&["propagation_error"]).inc();
+    }
+
+    pub fn add_error_count(&mut self, count: usize) {
+        ERROR_COUNT
+            .with_label_values(&["propagation_error"])
+            .inc_by(count as f64);
+    }
+
+    pub fn record_error(&mut self, error_type: &str) {
+        ERROR_COUNT.with_label_values(&[error_type]).inc();
+    }
+
+    // TASK-167: Record propagation latency
+    pub fn record_propagation_latency(&self, duration: Duration, operation: &str) {
+        PROPAGATION_LATENCY_DETAILED
+            .with_label_values(&[operation])
+            .observe(duration.as_secs_f64());
     }
 
     pub fn record_propagation(&self, duration: Duration, success: bool) {

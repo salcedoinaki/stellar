@@ -1,215 +1,288 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { api } from '../services/api';
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { socketService } from '../services/socket'
 
 export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'operator' | 'analyst' | 'viewer';
-  last_login_at?: string;
+  id: string
+  email: string
+  name?: string
+  role: 'admin' | 'operator' | 'analyst' | 'viewer'
+  last_login_at?: string
 }
 
 interface AuthState {
-  user: User | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
+  user: User | null
+  accessToken: string | null
+  refreshToken: string | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  error: string | null
   
   // Actions
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  refreshToken: () => Promise<boolean>;
-  fetchCurrentUser: () => Promise<void>;
-  clearError: () => void;
+  login: (email: string, password: string) => Promise<boolean>
+  logout: () => Promise<void>
+  refreshAccessToken: () => Promise<boolean>
+  checkAuth: () => Promise<void>
+  clearError: () => void
   
-  // Helpers
-  hasRole: (role: User['role']) => boolean;
-  canPerform: (action: string) => boolean;
+  // Permission checks
+  hasRole: (role: User['role']) => boolean
+  canPerform: (action: string) => boolean
 }
 
-const roleHierarchy: Record<User['role'], number> = {
+const ROLE_HIERARCHY: Record<User['role'], number> = {
   admin: 4,
   operator: 3,
   analyst: 2,
   viewer: 1,
-};
+}
 
-const actionPermissions: Record<string, User['role'][]> = {
+const ACTION_PERMISSIONS: Record<string, User['role'][]> = {
   view_dashboard: ['admin', 'operator', 'analyst', 'viewer'],
   view_satellites: ['admin', 'operator', 'analyst', 'viewer'],
   view_ssa: ['admin', 'operator', 'analyst'],
   approve_coa: ['admin', 'operator'],
+  select_coa: ['admin', 'operator'],
   manage_missions: ['admin', 'operator'],
+  create_mission: ['admin', 'operator'],
+  acknowledge_alarm: ['admin', 'operator'],
+  resolve_alarm: ['admin', 'operator'],
+  classify_threat: ['admin', 'operator', 'analyst'],
   manage_users: ['admin'],
   manage_system: ['admin'],
-};
+}
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
+      accessToken: null,
+      refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
       error: null,
 
-      login: async (email: string, password: string) => {
-        set({ isLoading: true, error: null });
+      login: async (email: string, password: string): Promise<boolean> => {
+        set({ isLoading: true, error: null })
         
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/login`, {
+          const response = await fetch(`${API_URL}/api/auth/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ email, password }),
-          });
+          })
 
-          const data = await response.json();
+          const data = await response.json()
 
           if (!response.ok) {
             set({ 
               isLoading: false, 
-              error: data.error || 'Login failed' 
-            });
-            return false;
+              error: data.error?.message || data.error || 'Login failed' 
+            })
+            return false
+          }
+
+          const { access_token, refresh_token, token, user } = data
+          const accessToken = access_token || token
+          const refreshTokenValue = refresh_token || null
+
+          // Store tokens
+          localStorage.setItem('access_token', accessToken)
+          if (refreshTokenValue) {
+            localStorage.setItem('refresh_token', refreshTokenValue)
           }
 
           set({
-            user: data.user,
-            token: data.token,
+            user,
+            accessToken,
+            refreshToken: refreshTokenValue,
             isAuthenticated: true,
             isLoading: false,
             error: null,
-          });
+          })
 
-          return true;
+          // Connect WebSocket with new token
+          socketService.connect(accessToken)
+
+          return true
         } catch (error) {
           set({ 
             isLoading: false, 
             error: 'Network error. Please try again.' 
-          });
-          return false;
+          })
+          return false
         }
       },
 
-      logout: async () => {
-        const { token } = get();
+      logout: async (): Promise<void> => {
+        const { accessToken } = get()
         
-        if (token) {
-          try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/logout`, {
+        try {
+          if (accessToken) {
+            await fetch(`${API_URL}/api/auth/logout`, {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${token}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json',
               },
-            });
-          } catch (error) {
-            // Ignore logout errors
+            })
           }
+        } catch {
+          // Ignore logout errors
         }
+
+        // Clear tokens
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
+
+        // Disconnect WebSocket
+        socketService.disconnect()
 
         set({
           user: null,
-          token: null,
+          accessToken: null,
+          refreshToken: null,
           isAuthenticated: false,
           error: null,
-        });
+        })
       },
 
-      refreshToken: async () => {
-        const { token } = get();
+      refreshAccessToken: async (): Promise<boolean> => {
+        const { accessToken, refreshToken } = get()
+        const tokenToUse = refreshToken || accessToken
         
-        if (!token) return false;
+        if (!tokenToUse) return false
 
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/refresh`, {
+          const response = await fetch(`${API_URL}/api/auth/refresh`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${tokenToUse}`,
               'Content-Type': 'application/json',
             },
-          });
+            body: refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined,
+          })
 
           if (!response.ok) {
             // Token refresh failed, log out
-            get().logout();
-            return false;
+            await get().logout()
+            return false
           }
 
-          const data = await response.json();
-          set({ token: data.token });
-          return true;
-        } catch (error) {
-          get().logout();
-          return false;
+          const data = await response.json()
+          const newAccessToken = data.access_token || data.token
+          const newRefreshToken = data.refresh_token || null
+
+          // Store new tokens
+          localStorage.setItem('access_token', newAccessToken)
+          if (newRefreshToken) {
+            localStorage.setItem('refresh_token', newRefreshToken)
+          }
+
+          set({ 
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+            user: data.user || get().user,
+          })
+
+          // Update WebSocket token
+          socketService.reconnect(newAccessToken)
+
+          return true
+        } catch {
+          await get().logout()
+          return false
         }
       },
 
-      fetchCurrentUser: async () => {
-        const { token } = get();
+      checkAuth: async (): Promise<void> => {
+        const accessToken = localStorage.getItem('access_token')
         
-        if (!token) return;
+        if (!accessToken) {
+          set({ isAuthenticated: false, user: null })
+          return
+        }
+
+        set({ isLoading: true })
 
         try {
-          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000'}/api/auth/me`, {
+          const response = await fetch(`${API_URL}/api/auth/me`, {
             headers: {
-              'Authorization': `Bearer ${token}`,
+              'Authorization': `Bearer ${accessToken}`,
             },
-          });
+          })
 
           if (!response.ok) {
             if (response.status === 401) {
-              get().logout();
+              // Try to refresh token
+              const refreshed = await get().refreshAccessToken()
+              if (!refreshed) {
+                set({ isAuthenticated: false, user: null, isLoading: false })
+              }
+            } else {
+              set({ isLoading: false })
             }
-            return;
+            return
           }
 
-          const data = await response.json();
-          set({ user: data.user, isAuthenticated: true });
-        } catch (error) {
-          // Network error, keep existing state
+          const data = await response.json()
+          set({ 
+            user: data.user, 
+            accessToken,
+            refreshToken: localStorage.getItem('refresh_token'),
+            isAuthenticated: true,
+            isLoading: false,
+          })
+
+          // Connect WebSocket
+          socketService.connect(accessToken)
+        } catch {
+          set({ isLoading: false })
         }
       },
 
       clearError: () => set({ error: null }),
 
-      hasRole: (requiredRole: User['role']) => {
-        const { user } = get();
-        if (!user) return false;
-        return roleHierarchy[user.role] >= roleHierarchy[requiredRole];
+      hasRole: (requiredRole: User['role']): boolean => {
+        const { user } = get()
+        if (!user) return false
+        return ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY[requiredRole]
       },
 
-      canPerform: (action: string) => {
-        const { user } = get();
-        if (!user) return false;
-        const allowedRoles = actionPermissions[action];
-        if (!allowedRoles) return false;
-        return allowedRoles.includes(user.role);
+      canPerform: (action: string): boolean => {
+        const { user } = get()
+        if (!user) return false
+        const allowedRoles = ACTION_PERMISSIONS[action]
+        if (!allowedRoles) return false
+        return allowedRoles.includes(user.role)
       },
     }),
     {
       name: 'stellar-auth',
       partialize: (state) => ({
-        token: state.token,
         user: state.user,
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
     }
   )
-);
+)
 
 // Helper hook to get auth headers
 export function getAuthHeaders(): Record<string, string> {
-  const token = useAuthStore.getState().token;
-  if (!token) return {};
-  return { 'Authorization': `Bearer ${token}` };
+  const token = useAuthStore.getState().accessToken
+  if (!token) return {}
+  return { 'Authorization': `Bearer ${token}` }
 }
 
 // Helper to check if user is authenticated
 export function isAuthenticated(): boolean {
-  return useAuthStore.getState().isAuthenticated;
+  return useAuthStore.getState().isAuthenticated
 }
+
+export default useAuthStore

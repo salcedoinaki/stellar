@@ -4,41 +4,60 @@ defmodule StellarWeb.Auth.ErrorHandler do
   """
 
   import Plug.Conn
-  use Phoenix.Controller, formats: [:json]
+  import Phoenix.Controller
+
+  require Logger
 
   @behaviour Guardian.Plug.ErrorHandler
 
   @impl Guardian.Plug.ErrorHandler
   def auth_error(conn, {type, reason}, _opts) do
+    log_auth_error(conn, type, reason)
+
     {status, message} = error_response(type, reason)
 
     conn
     |> put_status(status)
-    |> put_view(StellarWeb.ErrorJSON)
-    |> render("error.json", %{message: message, type: type})
+    |> put_view(json: StellarWeb.ErrorJSON)
+    |> render(:error, %{message: message, type: type})
+    |> halt()
   end
 
   defp error_response(:unauthenticated, _reason) do
-    {401, "Authentication required"}
+    {:unauthorized, "Authentication required"}
   end
 
   defp error_response(:invalid_token, _reason) do
-    {401, "Invalid or expired token"}
+    {:unauthorized, "Invalid or expired token"}
+  end
+
+  defp error_response(:token_revoked, _reason) do
+    {:unauthorized, "Token has been revoked"}
   end
 
   defp error_response(:no_resource_found, _reason) do
-    {401, "User not found"}
+    {:unauthorized, "User not found"}
   end
 
   defp error_response(:token_expired, _reason) do
-    {401, "Token has expired"}
+    {:unauthorized, "Token has expired"}
   end
 
   defp error_response(:already_authenticated, _reason) do
-    {400, "Already authenticated"}
+    {:bad_request, "Already authenticated"}
   end
 
   defp error_response(_type, _reason) do
-    {401, "Authentication failed"}
+    {:unauthorized, "Authentication failed"}
+  end
+
+  defp log_auth_error(conn, type, reason) do
+    Logger.info("Authentication error",
+      type: type,
+      reason: inspect(reason),
+      path: conn.request_path,
+      method: conn.method,
+      remote_ip: conn.remote_ip |> :inet.ntoa() |> to_string()
+    )
   end
 end

@@ -129,13 +129,10 @@ defmodule StellarCore.SatelliteTest do
   end
 
   describe "update_energy/2" do
-    test "updates satellite energy" do
+    test "updates satellite energy and returns new state" do
       {:ok, _} = Satellite.start("API-TEST-013")
 
-      assert {:ok, :updated} = Satellite.update_energy("API-TEST-013", -30.0)
-      :timer.sleep(10)
-
-      {:ok, state} = Satellite.get_state("API-TEST-013")
+      assert {:ok, state} = Satellite.update_energy("API-TEST-013", -30.0)
       assert state.energy == 70.0
 
       Satellite.stop("API-TEST-013")
@@ -147,13 +144,10 @@ defmodule StellarCore.SatelliteTest do
   end
 
   describe "update_memory/2" do
-    test "updates satellite memory usage" do
+    test "updates satellite memory usage and returns new state" do
       {:ok, _} = Satellite.start("API-TEST-014")
 
-      assert {:ok, :updated} = Satellite.update_memory("API-TEST-014", 256.0)
-      :timer.sleep(10)
-
-      {:ok, state} = Satellite.get_state("API-TEST-014")
+      assert {:ok, state} = Satellite.update_memory("API-TEST-014", 256.0)
       assert state.memory_used == 256.0
 
       Satellite.stop("API-TEST-014")
@@ -165,13 +159,10 @@ defmodule StellarCore.SatelliteTest do
   end
 
   describe "set_mode/2" do
-    test "sets satellite mode" do
+    test "sets satellite mode and returns new state" do
       {:ok, _} = Satellite.start("API-TEST-015")
 
-      assert {:ok, :updated} = Satellite.set_mode("API-TEST-015", :safe)
-      :timer.sleep(10)
-
-      {:ok, state} = Satellite.get_state("API-TEST-015")
+      assert {:ok, state} = Satellite.set_mode("API-TEST-015", :safe)
       assert state.mode == :safe
 
       Satellite.stop("API-TEST-015")
@@ -183,25 +174,19 @@ defmodule StellarCore.SatelliteTest do
   end
 
   describe "update_position/2" do
-    test "updates satellite position" do
+    test "updates satellite position and returns new state" do
       {:ok, _} = Satellite.start("API-TEST-016")
 
-      assert {:ok, :updated} = Satellite.update_position("API-TEST-016", {1000.0, 2000.0, 3000.0})
-      :timer.sleep(10)
-
-      {:ok, state} = Satellite.get_state("API-TEST-016")
+      assert {:ok, state} = Satellite.update_position("API-TEST-016", {1000.0, 2000.0, 3000.0})
       assert state.position == {1000.0, 2000.0, 3000.0}
 
       Satellite.stop("API-TEST-016")
     end
 
-    test "accepts integer coordinates" do
+    test "accepts integer coordinates and returns new state" do
       {:ok, _} = Satellite.start("API-TEST-017")
 
-      assert {:ok, :updated} = Satellite.update_position("API-TEST-017", {1000, 2000, 3000})
-      :timer.sleep(10)
-
-      {:ok, state} = Satellite.get_state("API-TEST-017")
+      assert {:ok, state} = Satellite.update_position("API-TEST-017", {1000, 2000, 3000})
       assert state.position == {1000.0, 2000.0, 3000.0}
 
       Satellite.stop("API-TEST-017")

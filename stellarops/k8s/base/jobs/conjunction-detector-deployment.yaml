@@ -1,0 +1,76 @@
+# Conjunction Detector Deployment
+# Runs as a separate service for conjunction detection
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: conjunction-detector
+  labels:
+    app: conjunction-detector
+    app.kubernetes.io/name: conjunction-detector
+    app.kubernetes.io/component: analysis
+    app.kubernetes.io/part-of: stellarops
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Only one instance should run detection
+  selector:
+    matchLabels:
+      app: conjunction-detector
+  template:
+    metadata:
+      labels:
+        app: conjunction-detector
+        app.kubernetes.io/name: conjunction-detector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: backend
+      containers:
+        - name: detector
+          image: ghcr.io/stellarops/backend:latest
+          imagePullPolicy: Always
+          command:
+            - /app/bin/stellarops
+            - eval
+            - "StellarCore.ConjunctionDetector.start_standalone()"
+          ports:
+            - name: http
+              containerPort: 4001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          env:
+            - name: DETECTION_INTERVAL_MS
+              value: "300000"  # 5 minutes
+            - name: DETECTION_HORIZON_HOURS
+              value: "72"
+            - name: COMPONENT
+              value: "conjunction-detector"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3

@@ -9,6 +9,10 @@ import type {
   CourseOfAction,
   ConjunctionStatistics,
   DetectorStatus,
+  COA,
+  COASimulationResult,
+  Mission,
+  Alarm
 } from '../types'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
@@ -237,17 +241,22 @@ export async function updateThreatAssessment(
 }
 
 // ============================================================================
-// Conjunctions API (SSA)
+// Conjunctions API
 // ============================================================================
 
 export interface ConjunctionFilters {
   satellite_id?: string
+  asset_id?: string
   severity?: string
   status?: string
   from?: string
   to?: string
+  tca_after?: string
+  tca_before?: string
   limit?: number
   upcoming?: boolean
+  page?: number
+  per_page?: number
 }
 
 export async function fetchConjunctions(filters?: ConjunctionFilters): Promise<Conjunction[]> {
@@ -274,6 +283,24 @@ export async function fetchCriticalConjunctions(): Promise<Conjunction[]> {
 
 export async function fetchConjunction(id: string): Promise<Conjunction> {
   const response = await fetch(`${API_BASE}/api/conjunctions/${id}`)
+  const data = await handleResponse<ApiResponse<Conjunction>>(response)
+  return data.data
+}
+
+export async function acknowledgeConjunction(id: string): Promise<Conjunction> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/${id}/acknowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const data = await handleResponse<ApiResponse<Conjunction>>(response)
+  return data.data
+}
+
+export async function resolveConjunction(id: string): Promise<Conjunction> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/${id}/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
   const data = await handleResponse<ApiResponse<Conjunction>>(response)
   return data.data
 }
@@ -338,15 +365,15 @@ export async function fetchUrgentCOAs(hours?: number): Promise<CourseOfAction[]>
   return data.data
 }
 
-export async function fetchCOA(id: string): Promise<CourseOfAction> {
+export async function fetchCOA(id: string): Promise<CourseOfAction | COA> {
   const response = await fetch(`${API_BASE}/api/coas/${id}`)
-  const data = await handleResponse<ApiResponse<CourseOfAction>>(response)
+  const data = await handleResponse<ApiResponse<CourseOfAction | COA>>(response)
   return data.data
 }
 
-export async function fetchCOAsForConjunction(conjunctionId: string): Promise<CourseOfAction[]> {
+export async function fetchCOAsForConjunction(conjunctionId: string): Promise<CourseOfAction[] | COA[]> {
   const response = await fetch(`${API_BASE}/api/coas/conjunction/${conjunctionId}`)
-  const data = await handleResponse<ApiResponse<CourseOfAction[]>>(response)
+  const data = await handleResponse<ApiResponse<CourseOfAction[] | COA[]>>(response)
   return data.data
 }
 
@@ -384,18 +411,108 @@ export async function generateCOAs(conjunctionId: string): Promise<CourseOfActio
   return data.data
 }
 
+export async function selectCOA(id: string, selectedBy?: string): Promise<{ data: COA; missions: Mission[] }> {
+  const response = await fetch(`${API_BASE}/api/coas/${id}/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selected_by: selectedBy }),
+  })
+  return handleResponse(response)
+}
+
+export async function simulateCOA(id: string): Promise<COASimulationResult> {
+  const response = await fetch(`${API_BASE}/api/coas/${id}/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const data = await handleResponse<ApiResponse<COASimulationResult>>(response)
+  return data.data
+}
+
+export async function regenerateCOAs(conjunctionId: string): Promise<COA[]> {
+  const response = await fetch(`${API_BASE}/api/conjunctions/${conjunctionId}/coas/regenerate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const data = await handleResponse<ApiResponse<COA[]>>(response)
+  return data.data
+}
+
+// ============================================================================
+// Missions API
+// ============================================================================
+
+export interface MissionFilters {
+  satellite_id?: string
+  status?: string
+  priority?: string
+  limit?: number
+  page?: number
+  per_page?: number
+}
+
+export async function fetchMissions(filters?: MissionFilters): Promise<Mission[]> {
+  const params = new URLSearchParams()
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value))
+      }
+    })
+  }
+  const queryString = params.toString()
+  const url = `${API_BASE}/api/missions${queryString ? `?${queryString}` : ''}`
+  const response = await fetch(url)
+  const data = await handleResponse<ApiResponse<Mission[]>>(response)
+  return data.data
+}
+
+export async function fetchMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}`)
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function createMission(mission: Partial<Mission>): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mission }),
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function cancelMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
+export async function retryMission(id: string): Promise<Mission> {
+  const response = await fetch(`${API_BASE}/api/missions/${id}/retry`, {
+    method: 'POST',
+  })
+  const data = await handleResponse<ApiResponse<Mission>>(response)
+  return data.data
+}
+
 // ============================================================================
 // Alarms API
 // ============================================================================
 
-import type { Alarm, AlarmSeverity, AlarmStatus, Mission, MissionStatus, MissionPriority } from '../types'
-
 export interface AlarmFilters {
-  severity?: AlarmSeverity
-  status?: AlarmStatus
+  severity?: string
+  status?: string
   source?: string
+  source_type?: string
   satellite_id?: string
   limit?: number
+  page?: number
+  per_page?: number
 }
 
 export async function fetchAlarms(filters?: AlarmFilters): Promise<Alarm[]> {
@@ -423,92 +540,25 @@ export async function fetchAlarm(id: string): Promise<Alarm> {
 export async function acknowledgeAlarm(id: string): Promise<Alarm> {
   const response = await fetch(`${API_BASE}/api/alarms/${id}/acknowledge`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
   })
   const data = await handleResponse<ApiResponse<Alarm>>(response)
   return data.data
 }
 
-export async function resolveAlarm(id: string): Promise<Alarm> {
+export async function resolveAlarm(id: string, resolution?: string): Promise<Alarm> {
   const response = await fetch(`${API_BASE}/api/alarms/${id}/resolve`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution }),
   })
   const data = await handleResponse<ApiResponse<Alarm>>(response)
   return data.data
 }
 
-export async function fetchAlarmSummary(): Promise<{
-  total: number
-  by_severity: Record<AlarmSeverity, number>
-  by_status: Record<AlarmStatus, number>
-}> {
+export async function fetchAlarmsSummary(): Promise<Record<string, number>> {
   const response = await fetch(`${API_BASE}/api/alarms/summary`)
-  const data = await handleResponse<{ data: { total: number; by_severity: Record<AlarmSeverity, number>; by_status: Record<AlarmStatus, number> } }>(response)
-  return data.data
-}
-
-// ============================================================================
-// Missions API
-// ============================================================================
-
-export interface MissionFilters {
-  status?: MissionStatus
-  priority?: MissionPriority
-  satellite_id?: string
-  limit?: number
-}
-
-export async function fetchMissions(filters?: MissionFilters): Promise<Mission[]> {
-  const params = new URLSearchParams()
-  if (filters) {
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        params.append(key, String(value))
-      }
-    })
-  }
-  const queryString = params.toString()
-  const url = `${API_BASE}/api/missions${queryString ? `?${queryString}` : ''}`
-  const response = await fetch(url)
-  const data = await handleResponse<ApiResponse<Mission[]>>(response)
-  return data.data
-}
-
-export async function fetchMission(id: string): Promise<Mission> {
-  const response = await fetch(`${API_BASE}/api/missions/${id}`)
-  const data = await handleResponse<ApiResponse<Mission>>(response)
-  return data.data
-}
-
-export async function createMission(mission: {
-  name?: string
-  type: string
-  satellite_id?: string
-  priority?: MissionPriority
-  deadline?: string
-  payload?: object
-}): Promise<Mission> {
-  const response = await fetch(`${API_BASE}/api/missions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mission }),
-  })
-  const data = await handleResponse<ApiResponse<Mission>>(response)
-  return data.data
-}
-
-export async function cancelMission(id: string): Promise<Mission> {
-  const response = await fetch(`${API_BASE}/api/missions/${id}/cancel`, {
-    method: 'POST',
-  })
-  const data = await handleResponse<ApiResponse<Mission>>(response)
-  return data.data
-}
-
-export async function retryMission(id: string): Promise<Mission> {
-  const response = await fetch(`${API_BASE}/api/missions/${id}/retry`, {
-    method: 'POST',
-  })
-  const data = await handleResponse<ApiResponse<Mission>>(response)
+  const data = await handleResponse<ApiResponse<Record<string, number>>>(response)
   return data.data
 }
 
@@ -556,8 +606,10 @@ export const api = {
     statistics: fetchConjunctionStatistics,
     detectorStatus: fetchDetectorStatus,
     triggerScreening: triggerScreening,
+    acknowledge: acknowledgeConjunction,
+    resolve: resolveConjunction,
   },
-  coa: {
+  coas: {
     list: fetchCOAs,
     get: fetchCOA,
     pending: fetchPendingCOAs,
@@ -567,13 +619,9 @@ export const api = {
     approve: approveCOA,
     reject: rejectCOA,
     generate: generateCOAs,
-  },
-  alarms: {
-    list: fetchAlarms,
-    get: fetchAlarm,
-    acknowledge: acknowledgeAlarm,
-    resolve: resolveAlarm,
-    summary: fetchAlarmSummary,
+    select: selectCOA,
+    simulate: simulateCOA,
+    regenerate: regenerateCOAs,
   },
   missions: {
     list: fetchMissions,
@@ -582,17 +630,13 @@ export const api = {
     cancel: cancelMission,
     retry: retryMission,
   },
-  // Legacy direct access
-  getSatellites: fetchSatellites,
-  getSatellite: fetchSatellite,
-  getAlarms: fetchAlarms,
-  acknowledgeAlarm: acknowledgeAlarm,
-  resolveAlarm: resolveAlarm,
-  getMissions: fetchMissions,
-  getMission: fetchMission,
-  createMission: createMission,
-  cancelMission: cancelMission,
-  retryMission: retryMission,
+  alarms: {
+    list: fetchAlarms,
+    get: fetchAlarm,
+    acknowledge: acknowledgeAlarm,
+    resolve: resolveAlarm,
+    summary: fetchAlarmsSummary,
+  },
 }
 
 export default api

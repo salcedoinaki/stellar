@@ -40,6 +40,11 @@ defmodule StellarCore.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # Orbital service infrastructure
+      StellarCore.Orbital.HttpClient,
+      StellarCore.Orbital.CircuitBreaker,
+      {StellarCore.Orbital.Cache, [ttl: :timer.minutes(5)]},
+      
       # Core infrastructure
       Registry,
       SatelliteSupervisor,

@@ -26,6 +26,11 @@ defmodule StellarCore.MixProject do
     [
       {:stellar_data, in_umbrella: true},
       {:phoenix_pubsub, "~> 2.1"},
+      {:req, "~> 0.4"},
+      {:finch, "~> 0.18"},
+      {:fuse, "~> 2.5"},
+      {:cachex, "~> 3.6"},
+      {:horde, "~> 0.9"},
       {:stream_data, "~> 1.0", only: [:test, :dev]}
     ]
   end

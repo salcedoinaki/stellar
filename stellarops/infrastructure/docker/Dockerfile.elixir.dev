@@ -30,11 +30,14 @@ COPY apps/stellar_web/mix.exs apps/stellar_web/
 # Get dependencies (cached layer)
 RUN mix deps.get
 
-# Copy source code
-COPY . .
+# Compile elixir_make first (required by argon2_elixir)
+RUN mix deps.compile elixir_make --force
 
 # Compile dependencies (cached layer)
 RUN mix deps.compile
+
+# Copy source code
+COPY . .
 
 # Default command
 CMD ["iex", "-S", "mix"]

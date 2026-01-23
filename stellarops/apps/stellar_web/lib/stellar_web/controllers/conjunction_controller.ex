@@ -13,6 +13,7 @@ defmodule StellarWeb.ConjunctionController do
   use StellarWeb, :controller
 
   alias StellarData.Conjunctions
+  alias StellarData.Conjunctions.Conjunction
   alias StellarCore.SSA.ConjunctionDetector
 
   action_fallback StellarWeb.FallbackController
@@ -22,15 +23,17 @@ defmodule StellarWeb.ConjunctionController do
 
   ## Query Parameters
   - satellite_id: Filter by satellite
+  - asset_id: Filter by asset ID
   - severity: Minimum severity (low, medium, high, critical)
-  - status: Filter by status
-  - from: Start of time range (ISO8601)
-  - to: End of time range (ISO8601)
+  - status: Filter by status (active, monitoring, resolved, expired)
+  - from/tca_after: Start of time range (ISO8601)
+  - to/tca_before: End of time range (ISO8601)
   - limit: Maximum results (default: 50)
+  - offset: Pagination offset (default 0)
   """
   def index(conn, params) do
     opts = build_query_opts(params)
-    
+
     conjunctions = if Map.get(params, "upcoming", "true") == "true" do
       Conjunctions.list_upcoming_conjunctions(opts)
     else
@@ -59,7 +62,47 @@ defmodule StellarWeb.ConjunctionController do
         |> json(%{error: "Conjunction not found"})
 
       conjunction ->
-        render(conn, :show, conjunction: conjunction)
+        conjunction = StellarData.Repo.preload(conjunction, :object)
+        asset_details = get_asset_details(conjunction.asset_id)
+        render(conn, :show, conjunction: conjunction, asset_details: asset_details)
+    end
+  end
+
+  @doc """
+  Acknowledge a conjunction (update status to monitoring).
+  """
+  def acknowledge(conn, %{"id" => id}) do
+    conjunction = Conjunctions.get_conjunction!(id)
+
+    with {:ok, %Conjunction{} = updated_conjunction} <-
+           Conjunctions.update_status(conjunction, "monitoring") do
+      # Broadcast update
+      Phoenix.PubSub.broadcast(
+        StellarData.PubSub,
+        "conjunctions:all",
+        {:conjunction_acknowledged, updated_conjunction}
+      )
+
+      render(conn, :show, conjunction: updated_conjunction)
+    end
+  end
+
+  @doc """
+  Resolve a conjunction (update status to resolved).
+  """
+  def resolve(conn, %{"id" => id}) do
+    conjunction = Conjunctions.get_conjunction!(id)
+
+    with {:ok, %Conjunction{} = updated_conjunction} <-
+           Conjunctions.update_status(conjunction, "resolved") do
+      # Broadcast update
+      Phoenix.PubSub.broadcast(
+        StellarData.PubSub,
+        "conjunctions:all",
+        {:conjunction_resolved, updated_conjunction}
+      )
+
+      render(conn, :show, conjunction: updated_conjunction)
     end
   end
 
@@ -98,7 +141,7 @@ defmodule StellarWeb.ConjunctionController do
   """
   def trigger_screening(conn, _params) do
     ConjunctionDetector.run_screening()
-    
+
     json(conn, %{
       status: "screening_started",
       message: "Conjunction screening has been triggered"
@@ -190,11 +233,14 @@ defmodule StellarWeb.ConjunctionController do
   defp build_query_opts(params) do
     [
       satellite_id: params["satellite_id"],
+      asset_id: params["asset_id"],
       severity: parse_atom(params["severity"]),
       status: parse_atom(params["status"]),
-      from: parse_datetime(params["from"]),
-      to: parse_datetime(params["to"]),
-      limit: parse_integer(params["limit"], 50)
+      from: parse_datetime(params["from"] || params["tca_after"]),
+      to: parse_datetime(params["to"] || params["tca_before"]),
+      limit: parse_integer(params["limit"], 50),
+      offset: parse_integer(params["offset"], 0),
+      preload: [:object]
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
@@ -236,5 +282,27 @@ defmodule StellarWeb.ConjunctionController do
         String.replace(acc, "%{#{key}}", to_string(value))
       end)
     end)
+  end
+
+  defp get_asset_details(nil), do: nil
+  defp get_asset_details(asset_id) do
+    # Try to get satellite state from the running system
+    case StellarCore.Satellite.get_state(asset_id) do
+      {:ok, state} ->
+        %{
+          id: asset_id,
+          mode: state.mode,
+          energy: state.energy,
+          position: state.position,
+          status: "active"
+        }
+
+      {:error, _} ->
+        # Satellite might not be running, return basic info
+        %{
+          id: asset_id,
+          status: "unknown"
+        }
+    end
   end
 end

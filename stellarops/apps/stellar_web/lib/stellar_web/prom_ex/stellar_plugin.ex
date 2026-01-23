@@ -29,7 +29,8 @@ defmodule StellarWeb.PromEx.StellarPlugin do
   def event_metrics(_opts) do
     [
       task_event_metrics(),
-      command_event_metrics()
+      command_event_metrics(),
+      alarm_event_metrics()
     ]
   end
 
@@ -210,5 +211,35 @@ defmodule StellarWeb.PromEx.StellarPlugin do
         %{}
       )
     end
+  end
+
+  # TASK-109: Alarm event metrics for Grafana dashboard
+  defp alarm_event_metrics do
+    Event.build(
+      :stellar_alarm_events,
+      [
+        counter(
+          [:stellar, :alarms, :raised, :total],
+          event_name: [:stellar, :alarm, :raised],
+          description: "Total number of alarms raised",
+          measurement: :count,
+          tags: [:severity, :type]
+        ),
+        counter(
+          [:stellar, :alarms, :acknowledged, :total],
+          event_name: [:stellar, :alarm, :acknowledged],
+          description: "Total number of alarms acknowledged",
+          measurement: :count,
+          tags: [:severity, :type]
+        ),
+        counter(
+          [:stellar, :alarms, :resolved, :total],
+          event_name: [:stellar, :alarm, :resolved],
+          description: "Total number of alarms resolved",
+          measurement: :count,
+          tags: [:severity, :type]
+        )
+      ]
+    )
   end
 end

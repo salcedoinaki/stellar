@@ -81,12 +81,24 @@ jobs:
         env:
           DATABASE_URL: ecto://postgres:postgres@localhost:5432/stellarops_test
 
+      - name: Generate coverage report
+        run: mix test.coverage
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: elixir-coverage
           path: cover/
           retention-days: 7
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(grep -oP 'Coverage: \K[\d.]+' cover/excoveralls.html 2>/dev/null || echo "0")
+          echo "Coverage: ${COVERAGE}%"
+          if [ "$(echo "$COVERAGE < 70" | bc -l)" -eq 1 ]; then
+            echo "::warning::Coverage is below 70%"
+          fi
+        continue-on-error: true
 
   # ============================================================================
   # Frontend (React/TypeScript) - Lint, Type-check, Test
@@ -199,6 +211,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -226,6 +241,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -234,6 +250,21 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.image }}.sarif'
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results-${{ matrix.image }}.sarif'
+        continue-on-error: true
 
   # ============================================================================
   # Deploy to Kubernetes (Dev Environment)

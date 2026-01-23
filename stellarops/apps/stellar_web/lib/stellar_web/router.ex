@@ -5,6 +5,7 @@ defmodule StellarWeb.Router do
   import Phoenix.Controller
 
   alias StellarWeb.Plugs.RateLimiter
+  alias StellarWeb.Auth.{Pipeline, AuthenticatedPipeline, EnsureRole}
 
   pipeline :api do
     plug :accepts, ["json"]
@@ -16,33 +17,34 @@ defmodule StellarWeb.Router do
     plug RateLimiter, limit: 30, window_ms: 60_000, category: "api_strict"
   end
 
-  pipeline :authenticated do
+  pipeline :api_auth do
     plug :accepts, ["json"]
     plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
-    plug StellarWeb.Auth.Pipeline
-    plug StellarWeb.Auth.EnsureAuthenticated
+    plug AuthenticatedPipeline
   end
 
-  pipeline :maybe_authenticated do
+  pipeline :maybe_auth do
     plug :accepts, ["json"]
-    plug StellarWeb.Auth.Pipeline
+    plug RateLimiter, limit: 100, window_ms: 60_000, category: "api"
+    plug Pipeline
   end
 
-  # Public authentication endpoints
+  # Public authentication endpoints (no auth required)
   scope "/api/auth", StellarWeb do
     pipe_through :api
 
     post "/login", AuthController, :login
+    post "/refresh", AuthController, :refresh
   end
 
   # Protected authentication endpoints
   scope "/api/auth", StellarWeb do
-    pipe_through :authenticated
+    pipe_through :api_auth
 
     post "/logout", AuthController, :logout
-    post "/refresh", AuthController, :refresh
+    post "/logout_all", AuthController, :logout_all
     get "/me", AuthController, :me
-    post "/change-password", AuthController, :change_password
+    post "/change_password", AuthController, :change_password
   end
 
   scope "/api", StellarWeb do
@@ -116,6 +118,7 @@ defmodule StellarWeb.Router do
     delete "/space_objects/:id", SpaceObjectController, :delete
     put "/space_objects/:id/threat", SpaceObjectController, :update_threat
     put "/space_objects/:id/tle", SpaceObjectController, :update_tle
+    post "/space_objects/:id/classify", SpaceObjectController, :classify
     post "/space_objects/:id/link_satellite", SpaceObjectController, :link_to_satellite
 
     # Conjunction events (SSA threat detection)
@@ -130,6 +133,8 @@ defmodule StellarWeb.Router do
     post "/conjunctions/screen_satellite/:satellite_id", ConjunctionController, :screen_satellite
     get "/conjunctions/:id", ConjunctionController, :show
     put "/conjunctions/:id/status", ConjunctionController, :update_status
+    post "/conjunctions/:id/acknowledge", ConjunctionController, :acknowledge
+    post "/conjunctions/:id/resolve", ConjunctionController, :resolve
 
     # Course of Action (COA) recommendations
     get "/coas", COAController, :index
@@ -141,10 +146,18 @@ defmodule StellarWeb.Router do
     get "/coas/conjunction/:conjunction_id", COAController, :for_conjunction
     get "/coas/conjunction/:conjunction_id/recommended", COAController, :recommended
     post "/coas/conjunction/:conjunction_id/generate", COAController, :generate
+    post "/coas/conjunction/:conjunction_id/regenerate", COAController, :regenerate
     post "/coas/conjunction/:conjunction_id/plan_maneuver", COAController, :plan_maneuver
     get "/coas/:id", COAController, :show
     post "/coas/:id/approve", COAController, :approve
+    post "/coas/:id/select", COAController, :select
     post "/coas/:id/reject", COAController, :reject
+    post "/coas/:id/simulate", COAController, :simulate
+
+    # Nested COA routes under conjunctions (alternative access pattern)
+    get "/conjunctions/:conjunction_id/coas", COAController, :for_conjunction
+    post "/conjunctions/:conjunction_id/coas/generate", COAController, :generate
+    post "/conjunctions/:conjunction_id/coas/regenerate", COAController, :regenerate
   end
 
   # Health check endpoints

@@ -7,6 +7,11 @@ defmodule StellarData.Users do
   alias StellarData.Repo
   alias StellarData.Users.User
 
+  require Logger
+
+  @max_login_attempts 5
+  @lockout_duration_minutes 30
+
   # ============================================================================
   # User CRUD
   # ============================================================================
@@ -52,6 +57,7 @@ defmodule StellarData.Users do
     %User{}
     |> User.registration_changeset(attrs)
     |> Repo.insert()
+    |> log_result("User created")
   end
 
   @doc """
@@ -61,6 +67,7 @@ defmodule StellarData.Users do
     user
     |> User.changeset(attrs)
     |> Repo.update()
+    |> log_result("User updated")
   end
 
   @doc """
@@ -70,6 +77,17 @@ defmodule StellarData.Users do
     user
     |> User.password_changeset(attrs)
     |> Repo.update()
+    |> log_result("Password changed")
+  end
+
+  @doc """
+  Updates a user's role.
+  """
+  def update_role(%User{} = user, role) do
+    user
+    |> User.role_changeset(%{role: role})
+    |> Repo.update()
+    |> log_result("Role updated")
   end
 
   @doc """
@@ -77,6 +95,7 @@ defmodule StellarData.Users do
   """
   def delete_user(%User{} = user) do
     Repo.delete(user)
+    |> log_result("User deleted")
   end
 
   @doc """
@@ -84,6 +103,17 @@ defmodule StellarData.Users do
   """
   def deactivate_user(%User{} = user) do
     update_user(user, %{active: false})
+    |> log_result("User deactivated")
+  end
+
+  @doc """
+  Activates a user.
+  """
+  def activate_user(%User{} = user) do
+    user
+    |> Ecto.Changeset.change(active: true, failed_login_attempts: 0, locked_at: nil)
+    |> Repo.update()
+    |> log_result("User activated")
   end
 
   # ============================================================================
@@ -121,6 +151,17 @@ defmodule StellarData.Users do
   end
 
   @doc """
+  Verify a user's password.
+  """
+  def verify_password(%User{} = user, password) do
+    if User.valid_password?(user, password) do
+      {:ok, user}
+    else
+      {:error, :invalid_password}
+    end
+  end
+
+  @doc """
   Records a successful login.
   """
   def record_login(%User{} = user) do
@@ -145,6 +186,7 @@ defmodule StellarData.Users do
     user
     |> Ecto.Changeset.change(%{locked_at: nil, failed_login_attempts: 0})
     |> Repo.update()
+    |> log_result("User unlocked")
   end
 
   # ============================================================================
@@ -154,20 +196,36 @@ defmodule StellarData.Users do
   @doc """
   Checks if a user has a specific role or higher.
   """
-  def has_role?(%User{role: role}, required_role) do
-    role_level(role) >= role_level(required_role)
+  def has_role?(%User{} = user, required_role) do
+    User.has_role?(user, required_role)
   end
 
   @doc """
   Checks if a user can perform a specific action.
+  
+  Permission mappings:
+  - :manage_users -> admin only
+  - :manage_system -> admin only
+  - :approve_coa / :select_coa -> operator+
+  - :manage_missions / :create_mission -> operator+
+  - :acknowledge_alarm / :resolve_alarm -> operator+
+  - :view_ssa / :classify_threat -> analyst+
+  - :ingest_tle -> analyst+
+  - :view_dashboard / :view_satellites -> viewer+ (any authenticated user)
   """
   def can?(%User{} = user, action) do
     case action do
       :view_dashboard -> user.active
       :view_satellites -> user.active
       :view_ssa -> user.active and user.role in [:admin, :operator, :analyst]
+      :classify_threat -> user.active and user.role in [:admin, :operator, :analyst]
+      :ingest_tle -> user.active and user.role in [:admin, :operator, :analyst]
       :approve_coa -> user.active and user.role in [:admin, :operator]
+      :select_coa -> user.active and user.role in [:admin, :operator]
       :manage_missions -> user.active and user.role in [:admin, :operator]
+      :create_mission -> user.active and user.role in [:admin, :operator]
+      :acknowledge_alarm -> user.active and user.role in [:admin, :operator]
+      :resolve_alarm -> user.active and user.role in [:admin, :operator]
       :manage_users -> user.active and user.role == :admin
       :manage_system -> user.active and user.role == :admin
       _ -> false
@@ -210,9 +268,15 @@ defmodule StellarData.Users do
   defp filter_by_active(query, nil), do: query
   defp filter_by_active(query, active), do: where(query, [u], u.active == ^active)
 
-  defp role_level(:admin), do: 4
-  defp role_level(:operator), do: 3
-  defp role_level(:analyst), do: 2
-  defp role_level(:viewer), do: 1
-  defp role_level(_), do: 0
+  defp log_result({:ok, user} = result, action) do
+    Logger.info(action, user_id: user.id, email: user.email)
+    result
+  end
+
+  defp log_result({:error, changeset} = result, action) do
+    Logger.warning("#{action} failed", errors: inspect(changeset.errors))
+    result
+  end
+
+  defp log_result(result, _action), do: result
 end

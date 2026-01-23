@@ -110,11 +110,7 @@ defmodule StellarWeb.SatelliteController do
   """
   def update_energy(conn, %{"id" => id, "delta" => delta}) when is_number(delta) do
     case Satellite.update_energy(id, delta) do
-      {:ok, :updated} ->
-        # Give the cast time to process
-        Process.sleep(5)
-        {:ok, state} = Satellite.get_state(id)
-
+      {:ok, state} ->
         # Broadcast the update
         StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 
@@ -151,10 +147,7 @@ defmodule StellarWeb.SatelliteController do
 
       true ->
         case Satellite.set_mode(id, mode) do
-          {:ok, :updated} ->
-            Process.sleep(5)
-            {:ok, state} = Satellite.get_state(id)
-
+          {:ok, state} ->
             # Broadcast the update
             StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 
@@ -184,10 +177,7 @@ defmodule StellarWeb.SatelliteController do
   def update_memory(conn, %{"id" => id, "memory" => memory})
       when is_number(memory) and memory >= 0 do
     case Satellite.update_memory(id, memory) do
-      {:ok, :updated} ->
-        Process.sleep(5)
-        {:ok, state} = Satellite.get_state(id)
-
+      {:ok, state} ->
         # Broadcast the update
         StellarWeb.Endpoint.broadcast("satellites:lobby", "satellite_updated", serialize_state(state))
 

@@ -1,18 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSatelliteStore } from '../store/satelliteStore'
-import { api } from '../services/api'
+import { api, type MissionFilters } from '../services/api'
 import type { Mission, MissionStatus, MissionPriority } from '../types'
 
-type SortField = 'priority' | 'deadline' | 'status' | 'satellite_id'
+type SortField = 'priority' | 'deadline' | 'status' | 'satellite_id' | 'inserted_at'
 type SortOrder = 'asc' | 'desc'
 
-interface MissionFilters {
-  status?: MissionStatus
-  priority?: MissionPriority
-  satellite_id?: string
-}
-
-export function MissionDashboard() {
+export default function MissionDashboard() {
   const { satellites, isConnected } = useSatelliteStore()
   
   const [missions, setMissions] = useState<Mission[]>([])
@@ -35,7 +29,7 @@ export function MissionDashboard() {
   const fetchMissions = useCallback(async () => {
     try {
       setIsLoading(true)
-      const data = await api.getMissions(filters)
+      const data = await api.missions.list(filters)
       setMissions(data)
       setError(null)
     } catch (err) {
@@ -60,12 +54,14 @@ export function MissionDashboard() {
     low: 3 
   }
 
-  const statusOrder: Record<MissionStatus, number> = {
+  const statusOrder: Record<string, number> = {
     running: 0,
-    pending: 1,
-    completed: 2,
-    failed: 3,
-    cancelled: 4
+    scheduled: 1,
+    pending: 2,
+    completed: 3,
+    failed: 4,
+    cancelled: 5,
+    canceled: 5
   }
 
   const sortedMissions = [...missions].sort((a, b) => {
@@ -75,13 +71,18 @@ export function MissionDashboard() {
         comparison = (priorityOrder[a.priority] || 5) - (priorityOrder[b.priority] || 5)
         break
       case 'deadline':
-        comparison = new Date(a.deadline || 0).getTime() - new Date(b.deadline || 0).getTime()
+        if (!a.deadline) return 1
+        if (!b.deadline) return -1
+        comparison = new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
         break
       case 'status':
         comparison = (statusOrder[a.status] || 5) - (statusOrder[b.status] || 5)
         break
       case 'satellite_id':
         comparison = (a.satellite_id || '').localeCompare(b.satellite_id || '')
+        break
+      case 'inserted_at':
+        comparison = new Date(b.inserted_at).getTime() - new Date(a.inserted_at).getTime()
         break
     }
     return sortOrder === 'asc' ? comparison : -comparison
@@ -92,8 +93,9 @@ export function MissionDashboard() {
     if (!confirm('Are you sure you want to cancel this mission?')) return
     
     try {
-      await api.cancelMission(missionId)
+      await api.missions.cancel(missionId)
       fetchMissions()
+      if (selectedMission?.id === missionId) setSelectedMission(null)
     } catch (err) {
       console.error('Failed to cancel mission:', err)
     }
@@ -102,42 +104,10 @@ export function MissionDashboard() {
   // Retry mission
   const handleRetry = async (missionId: string) => {
     try {
-      await api.retryMission(missionId)
+      await api.missions.retry(missionId)
       fetchMissions()
     } catch (err) {
       console.error('Failed to retry mission:', err)
-    }
-  }
-
-  const getPriorityColor = (priority: MissionPriority) => {
-    switch (priority) {
-      case 'critical': return 'bg-red-500/20 text-red-400 border-red-500/50'
-      case 'high': return 'bg-orange-500/20 text-orange-400 border-orange-500/50'
-      case 'normal': return 'bg-blue-500/20 text-blue-400 border-blue-500/50'
-      case 'low': return 'bg-slate-500/20 text-slate-400 border-slate-500/50'
-      default: return 'bg-slate-500/20 text-slate-400 border-slate-500/50'
-    }
-  }
-
-  const getStatusColor = (status: MissionStatus) => {
-    switch (status) {
-      case 'running': return 'bg-green-500/20 text-green-400'
-      case 'pending': return 'bg-yellow-500/20 text-yellow-400'
-      case 'completed': return 'bg-blue-500/20 text-blue-400'
-      case 'failed': return 'bg-red-500/20 text-red-400'
-      case 'cancelled': return 'bg-slate-500/20 text-slate-400'
-      default: return 'bg-slate-500/20 text-slate-400'
-    }
-  }
-
-  const getStatusIcon = (status: MissionStatus) => {
-    switch (status) {
-      case 'running': return '▶️'
-      case 'pending': return '⏳'
-      case 'completed': return '✅'
-      case 'failed': return '❌'
-      case 'cancelled': return '🚫'
-      default: return '❓'
     }
   }
 
@@ -179,7 +149,7 @@ export function MissionDashboard() {
             onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 bg-stellar-600 hover:bg-stellar-500 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
           >
-            <span>➕</span>
+            <span>+</span>
             New Mission
           </button>
           <button
@@ -187,8 +157,7 @@ export function MissionDashboard() {
             disabled={isLoading}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors flex items-center gap-2"
           >
-            <span className={isLoading ? 'animate-spin' : ''}>🔄</span>
-            Refresh
+            <span className={isLoading ? 'animate-spin' : ''}>Refresh</span>
           </button>
         </div>
       </div>
@@ -223,6 +192,7 @@ export function MissionDashboard() {
         >
           <option value="">All Statuses</option>
           <option value="pending">Pending</option>
+          <option value="scheduled">Scheduled</option>
           <option value="running">Running</option>
           <option value="completed">Completed</option>
           <option value="failed">Failed</option>
@@ -265,13 +235,14 @@ export function MissionDashboard() {
             <option value="deadline">Sort by Deadline</option>
             <option value="status">Sort by Status</option>
             <option value="satellite_id">Sort by Satellite</option>
+            <option value="inserted_at">Sort by Created</option>
           </select>
 
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
             className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg"
           >
-            {sortOrder === 'asc' ? '↑' : '↓'}
+            {sortOrder === 'asc' ? 'Asc' : 'Desc'}
           </button>
         </div>
       </div>
@@ -311,16 +282,12 @@ export function MissionDashboard() {
                   <h3 className="text-white font-medium">{mission.name || `Mission ${mission.id.slice(0, 8)}`}</h3>
                   <p className="text-slate-400 text-xs">{mission.type}</p>
                 </div>
-                <span className={`px-2 py-0.5 text-xs rounded border ${getPriorityColor(mission.priority)}`}>
-                  {mission.priority}
-                </span>
+                <PriorityBadge priority={mission.priority} />
               </div>
 
               {/* Status */}
               <div className="flex items-center gap-2 mb-3">
-                <span className={`px-2 py-1 text-xs rounded ${getStatusColor(mission.status)}`}>
-                  {getStatusIcon(mission.status)} {mission.status}
-                </span>
+                <StatusBadge status={mission.status} />
                 {mission.status === 'running' && (
                   <span className="text-xs text-slate-400">
                     {formatDuration(mission.started_at, null)}
@@ -350,7 +317,7 @@ export function MissionDashboard() {
 
               {/* Actions */}
               <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-700" onClick={(e) => e.stopPropagation()}>
-                {(mission.status === 'pending' || mission.status === 'running') && (
+                {(mission.status === 'pending' || mission.status === 'running' || mission.status === 'scheduled') && (
                   <button
                     onClick={() => handleCancel(mission.id)}
                     className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded"
@@ -404,6 +371,41 @@ export function MissionDashboard() {
   )
 }
 
+// Priority Badge Component
+function PriorityBadge({ priority }: { priority: MissionPriority }) {
+  const colors: Record<string, string> = {
+    critical: 'text-red-400 bg-red-400/10 border-red-500/50',
+    high: 'text-orange-400 bg-orange-400/10 border-orange-500/50',
+    normal: 'text-blue-400 bg-blue-400/10 border-blue-500/50',
+    low: 'text-slate-400 bg-slate-400/10 border-slate-500/50',
+  }
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase border ${colors[priority] || colors.normal}`}>
+      {priority}
+    </span>
+  )
+}
+
+// Status Badge Component
+function StatusBadge({ status }: { status: MissionStatus }) {
+  const colors: Record<string, string> = {
+    pending: 'text-yellow-400 bg-yellow-400/10',
+    scheduled: 'text-blue-400 bg-blue-400/10',
+    running: 'text-cyan-400 bg-cyan-400/10 animate-pulse',
+    completed: 'text-green-400 bg-green-400/10',
+    failed: 'text-red-400 bg-red-400/10',
+    cancelled: 'text-slate-400 bg-slate-400/10',
+    canceled: 'text-slate-400 bg-slate-400/10',
+  }
+
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs font-medium uppercase ${colors[status] || 'text-slate-400 bg-slate-400/10'}`}>
+      {status}
+    </span>
+  )
+}
+
 // Create Mission Modal Component
 interface CreateMissionModalProps {
   satellites: Array<{ id: string; name: string }>
@@ -436,7 +438,7 @@ function CreateMissionModal({ satellites, onClose, onCreate }: CreateMissionModa
         throw new Error('Invalid payload JSON')
       }
 
-      await api.createMission({
+      await api.missions.create({
         name: formData.name,
         type: formData.type,
         satellite_id: formData.satellite_id || undefined,
@@ -458,7 +460,7 @@ function CreateMissionModal({ satellites, onClose, onCreate }: CreateMissionModa
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-white">Create New Mission</h2>
-            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">×</button>
+            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">x</button>
           </div>
 
           {error && (
@@ -590,7 +592,7 @@ function MissionDetailModal({ mission, satelliteName, onClose, onCancel, onRetry
               <h2 className="text-xl font-bold text-white">{mission.name || 'Mission Details'}</h2>
               <p className="text-slate-400 text-sm">ID: {mission.id}</p>
             </div>
-            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">×</button>
+            <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">x</button>
           </div>
 
           <div className="space-y-4">
@@ -601,11 +603,11 @@ function MissionDetailModal({ mission, satelliteName, onClose, onCancel, onRetry
               </div>
               <div>
                 <label className="text-slate-400 text-sm">Status</label>
-                <p className="mt-1 text-white capitalize">{mission.status}</p>
+                <div className="mt-1"><StatusBadge status={mission.status} /></div>
               </div>
               <div>
                 <label className="text-slate-400 text-sm">Priority</label>
-                <p className="mt-1 text-white capitalize">{mission.priority}</p>
+                <div className="mt-1"><PriorityBadge priority={mission.priority} /></div>
               </div>
               <div>
                 <label className="text-slate-400 text-sm">Satellite</label>
@@ -635,18 +637,21 @@ function MissionDetailModal({ mission, satelliteName, onClose, onCancel, onRetry
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="text-slate-400 text-sm">Energy Required</label>
-                <p className="mt-1 text-white">{mission.energy_required || 0}%</p>
-              </div>
-              <div>
-                <label className="text-slate-400 text-sm">Memory Required</label>
-                <p className="mt-1 text-white">{mission.memory_required || 0}%</p>
-              </div>
-              <div>
-                <label className="text-slate-400 text-sm">Retries</label>
-                <p className="mt-1 text-white">{mission.retry_count}/{mission.max_retries}</p>
+            <div className="bg-slate-700/50 rounded p-3 space-y-2 text-sm">
+              <h4 className="text-xs text-slate-400 uppercase mb-2">Resources</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <span className="text-slate-400">Energy:</span>
+                  <span className="ml-2 text-white">{mission.required_energy || mission.energy_required || 0}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Memory:</span>
+                  <span className="ml-2 text-white">{mission.required_memory || mission.memory_required || 0}%</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Retries:</span>
+                  <span className="ml-2 text-white">{mission.retry_count}/{mission.max_retries}</span>
+                </div>
               </div>
             </div>
 
@@ -659,24 +664,24 @@ function MissionDetailModal({ mission, satelliteName, onClose, onCancel, onRetry
               </div>
             )}
 
-            {mission.result && (
-              <div>
-                <label className="text-slate-400 text-sm">Result</label>
-                <pre className="mt-1 bg-slate-900 text-slate-300 p-3 rounded text-sm overflow-auto max-h-32">
+            {mission.result && Object.keys(mission.result).length > 0 && (
+              <div className="bg-green-500/10 border border-green-500/50 rounded p-3">
+                <label className="text-green-400 text-sm">Result</label>
+                <pre className="mt-1 text-slate-300 text-sm overflow-auto max-h-32">
                   {JSON.stringify(mission.result, null, 2)}
                 </pre>
               </div>
             )}
 
-            {mission.error_message && (
-              <div>
-                <label className="text-slate-400 text-sm">Error</label>
-                <p className="mt-1 text-red-400">{mission.error_message}</p>
+            {(mission.error_message || mission.last_error) && (
+              <div className="bg-red-500/10 border border-red-500/50 rounded p-3">
+                <label className="text-red-400 text-sm">Error</label>
+                <p className="mt-1 text-red-300">{mission.error_message || mission.last_error}</p>
               </div>
             )}
 
             <div className="flex items-center gap-3 pt-4 border-t border-slate-700">
-              {(mission.status === 'pending' || mission.status === 'running') && (
+              {['pending', 'running', 'scheduled'].includes(mission.status) && (
                 <button
                   onClick={onCancel}
                   className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg"
@@ -705,5 +710,3 @@ function MissionDetailModal({ mission, satelliteName, onClose, onCancel, onRetry
     </div>
   )
 }
-
-export default MissionDashboard

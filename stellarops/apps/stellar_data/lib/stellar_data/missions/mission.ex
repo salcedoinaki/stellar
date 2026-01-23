@@ -54,6 +54,14 @@ defmodule StellarData.Missions.Mission do
     # Relationships
     field :satellite_id, :string
     field :ground_station_id, :binary_id
+    field :coa_id, :binary_id
+
+    # Additional scheduling fields
+    field :scheduled_start, :utc_datetime
+    field :estimated_duration_seconds, :integer
+
+    # Parameters for mission execution
+    field :parameters, :map, default: %{}
 
     timestamps()
   end
@@ -77,7 +85,11 @@ defmodule StellarData.Missions.Mission do
     :estimated_duration,
     :payload,
     :result,
-    :ground_station_id
+    :ground_station_id,
+    :coa_id,
+    :scheduled_start,
+    :estimated_duration_seconds,
+    :parameters
   ]
 
   @doc """

@@ -66,6 +66,17 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # Guardian JWT secret (production)
+  guardian_secret =
+    System.get_env("GUARDIAN_SECRET_KEY") ||
+      raise """
+      environment variable GUARDIAN_SECRET_KEY is missing.
+      You can generate one by calling: mix guardian.gen.secret
+      """
+
+  config :stellar_web, StellarWeb.Auth.Guardian,
+    secret_key: guardian_secret
+
   # Start the Phoenix server
   if System.get_env("PHX_SERVER") do
     config :stellar_web, StellarWeb.Endpoint, server: true

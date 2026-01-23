@@ -276,6 +276,16 @@ defmodule StellarData.Missions do
     |> Repo.all()
   end
 
+  @doc """
+  Lists missions for a specific COA.
+  """
+  def list_missions_for_coa(coa_id) do
+    Mission
+    |> where([m], m.coa_id == ^coa_id)
+    |> order_by([m], asc: m.scheduled_start)
+    |> Repo.all()
+  end
+
   # ============================================================================
   # Private Helpers
   # ============================================================================

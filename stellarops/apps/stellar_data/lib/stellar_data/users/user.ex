@@ -2,11 +2,12 @@ defmodule StellarData.Users.User do
   @moduledoc """
   User schema for authentication and authorization.
   
-  Users can have different roles:
-  - :admin - Full system access
-  - :operator - Can approve COAs, manage satellites
-  - :analyst - Read-only access to SSA data
-  - :viewer - Basic dashboard access
+  ## Roles
+  
+  - `admin`: Full system access, user management
+  - `operator`: Mission control, COA selection, satellite operations
+  - `analyst`: Threat analysis, classification, intel ingestion
+  - `viewer`: Read-only access to dashboards and data
   """
 
   use Ecto.Schema
@@ -24,6 +25,7 @@ defmodule StellarData.Users.User do
     field :name, :string
     field :role, Ecto.Enum, values: @roles, default: :viewer
     field :active, :boolean, default: true
+    field :tokens_revoked_at, :utc_datetime_usec
     field :last_login_at, :utc_datetime_usec
     field :failed_login_attempts, :integer, default: 0
     field :locked_at, :utc_datetime_usec
@@ -41,6 +43,7 @@ defmodule StellarData.Users.User do
     |> validate_required([:email, :password, :name])
     |> validate_email()
     |> validate_password()
+    |> unique_constraint(:email)
     |> hash_password()
   end
 
@@ -62,6 +65,15 @@ defmodule StellarData.Users.User do
     |> validate_required([:password])
     |> validate_password()
     |> hash_password()
+  end
+
+  @doc """
+  Changeset for role update.
+  """
+  def role_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:role])
+    |> validate_required([:role])
   end
 
   @doc """
@@ -91,6 +103,14 @@ defmodule StellarData.Users.User do
   end
 
   @doc """
+  Changeset for token revocation tracking.
+  """
+  def token_revocation_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:tokens_revoked_at])
+  end
+
+  @doc """
   Validates a password against the stored hash.
   """
   def valid_password?(%__MODULE__{password_hash: hash}, password) 
@@ -110,6 +130,30 @@ defmodule StellarData.Users.User do
   end
 
   @doc """
+  Check if user has a specific role or higher.
+  """
+  def has_role?(user, required_role) do
+    role_level(user.role) >= role_level(required_role)
+  end
+
+  @doc """
+  Get role hierarchy level.
+  """
+  def role_level(role) do
+    case role do
+      :admin -> 4
+      :operator -> 3
+      :analyst -> 2
+      :viewer -> 1
+      "admin" -> 4
+      "operator" -> 3
+      "analyst" -> 2
+      "viewer" -> 1
+      _ -> 0
+    end
+  end
+
+  @doc """
   Returns the list of available roles.
   """
   def roles, do: @roles
@@ -120,9 +164,8 @@ defmodule StellarData.Users.User do
 
   defp validate_email(changeset) do
     changeset
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/, message: "must be a valid email address")
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "must be a valid email address")
     |> validate_length(:email, max: 160)
-    |> unique_constraint(:email)
     |> update_change(:email, &String.downcase/1)
   end
 

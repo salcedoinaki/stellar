@@ -1,0 +1,26 @@
+# Headless Service for Elixir Clustering
+# Used by libcluster for DNS-based node discovery
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/component: clustering
+    app.kubernetes.io/part-of: stellarops
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  selector:
+    app: backend
+  ports:
+    - name: epmd
+      port: 4369
+      targetPort: 4369
+      protocol: TCP
+    - name: erlang-dist
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+  publishNotReadyAddresses: true  # Important for clustering during startup

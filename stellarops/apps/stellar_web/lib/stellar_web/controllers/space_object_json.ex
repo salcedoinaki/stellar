@@ -4,36 +4,44 @@ defmodule StellarWeb.SpaceObjectJSON do
   """
 
   alias StellarData.SpaceObjects.SpaceObject
+  alias StellarData.Threats.ThreatAssessment
 
   @doc """
   Renders a list of space objects.
   """
   def index(%{space_objects: space_objects}) do
-    %{data: for(object <- space_objects, do: data(object))}
+    %{data: for(object <- space_objects, do: data(object, nil))}
   end
 
   @doc """
-  Renders a single space object.
+  Renders a single space object with optional threat assessment.
   """
-  def show(%{space_object: space_object}) do
-    %{data: data(space_object)}
+  def show(%{space_object: space_object, threat_assessment: threat_assessment}) do
+    %{data: data(space_object, threat_assessment)}
   end
 
-  defp data(%SpaceObject{} = object) do
-    %{
+  def show(%{space_object: space_object}) do
+    %{data: data(space_object, nil)}
+  end
+
+  defp data(%SpaceObject{} = object, threat_assessment) do
+    base_data = %{
       id: object.id,
       norad_id: object.norad_id,
       name: object.name,
       international_designator: object.international_designator,
       object_type: object.object_type,
       owner: object.owner,
+      country_code: object.country_code,
       status: object.status,
+      orbital_status: object.orbital_status,
       orbit_type: object.orbit_type,
       orbital_parameters: %{
         inclination_deg: object.inclination_deg,
         apogee_km: object.apogee_km,
         perigee_km: object.perigee_km,
         period_minutes: object.period_minutes,
+        period_min: object.period_min,
         semi_major_axis_km: object.semi_major_axis_km,
         eccentricity: object.eccentricity,
         raan_deg: object.raan_deg,
@@ -48,14 +56,9 @@ defmodule StellarWeb.SpaceObjectJSON do
         epoch: object.tle_epoch,
         updated_at: object.tle_updated_at
       },
-      threat_assessment: %{
-        threat_level: object.threat_level,
-        classification: object.classification,
-        capabilities: object.capabilities,
-        intel_summary: object.intel_summary
-      },
       physical_characteristics: %{
         radar_cross_section: object.radar_cross_section,
+        rcs_meters: object.rcs_meters,
         size_class: object.size_class,
         launch_date: object.launch_date,
         launch_site: object.launch_site
@@ -70,6 +73,35 @@ defmodule StellarWeb.SpaceObjectJSON do
       notes: object.notes,
       inserted_at: object.inserted_at,
       updated_at: object.updated_at
+    }
+
+    # Add threat assessment if provided, otherwise include inline fields
+    case threat_assessment do
+      nil ->
+        Map.put(base_data, :threat_assessment, %{
+          threat_level: object.threat_level,
+          classification: object.classification,
+          capabilities: object.capabilities,
+          intel_summary: object.intel_summary
+        })
+
+      assessment ->
+        Map.put(base_data, :threat_assessment, threat_data(assessment))
+    end
+  end
+
+  defp threat_data(%ThreatAssessment{} = assessment) do
+    %{
+      id: assessment.id,
+      classification: assessment.classification,
+      capabilities: assessment.capabilities,
+      threat_level: assessment.threat_level,
+      intel_summary: assessment.intel_summary,
+      notes: assessment.notes,
+      assessed_by: assessment.assessed_by,
+      assessed_at: assessment.assessed_at,
+      confidence_level: assessment.confidence_level,
+      updated_at: assessment.updated_at
     }
   end
 end

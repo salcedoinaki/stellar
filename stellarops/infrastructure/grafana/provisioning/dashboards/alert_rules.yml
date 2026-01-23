@@ -1,0 +1,151 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: StellarOps Critical Alerts
+    folder: StellarOps
+    interval: 1m
+    rules:
+      # TASK-110: Critical alarm alert rule
+      - uid: stellar-critical-alarms
+        title: Critical Alarms Active
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stellar_alarms_raised_total{severity="critical"} - stellar_alarms_resolved_total{severity="critical"} > 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 0m
+        annotations:
+          summary: Critical alarm is active in StellarOps
+          description: There are active critical alarms in the system that require immediate attention.
+        labels:
+          severity: critical
+        noDataState: OK
+        execErrState: Error
+      
+      # TASK-110: Low energy alert
+      - uid: stellar-low-energy
+        title: Fleet Average Energy Low
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stellar_satellites_energy_avg < 30
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 5m
+        annotations:
+          summary: Fleet average energy is critically low
+          description: The average energy level across all satellites has dropped below 30%.
+        labels:
+          severity: critical
+        noDataState: OK
+        execErrState: Error
+      
+      # TASK-110: Many satellites in survival mode
+      - uid: stellar-survival-mode-alert
+        title: Multiple Satellites in Survival Mode
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stellar_satellites_by_mode{mode="survival"} > 2
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 2m
+        annotations:
+          summary: Multiple satellites are in survival mode
+          description: More than 2 satellites are operating in survival mode, indicating potential fleet-wide issues.
+        labels:
+          severity: major
+        noDataState: OK
+        execErrState: Error
+      
+      # TASK-110: High task failure rate
+      - uid: stellar-high-task-failures
+        title: High Task Failure Rate
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(stellar_tasks_failed_total[5m]) / (rate(stellar_tasks_completed_total[5m]) + rate(stellar_tasks_failed_total[5m]) + 0.001) > 0.2
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 5m
+        annotations:
+          summary: Task failure rate is above 20%
+          description: More than 20% of satellite tasks are failing over the past 5 minutes.
+        labels:
+          severity: major
+        noDataState: OK
+        execErrState: Error
+      
+      # TASK-110: No active satellites
+      - uid: stellar-no-satellites
+        title: No Active Satellites
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: stellar_satellites_active == 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 1m
+        annotations:
+          summary: No active satellites detected
+          description: The constellation has no active satellites. This may indicate a system-wide issue.
+        labels:
+          severity: critical
+        noDataState: Alerting
+        execErrState: Error
+      
+      # TASK-110: High alarm rate (alarm storm detection)
+      - uid: stellar-alarm-storm
+        title: Alarm Storm Detected
+        condition: A
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(stellar_alarms_raised_total[5m]) > 10
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+        for: 2m
+        annotations:
+          summary: Alarm storm detected - high rate of alarms being raised
+          description: More than 10 alarms per second are being raised. This may indicate a cascading failure.
+        labels:
+          severity: major
+        noDataState: OK
+        execErrState: Error
