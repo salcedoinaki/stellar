@@ -56,7 +56,7 @@ defmodule StellarWeb.SpaceObjectController do
     with {:ok, %SpaceObject{} = object} <- SpaceObjects.create_object(space_object_params) do
       conn
       |> put_status(:created)
-      |> put_resp_header("location", ~p"/api/objects/#{object.norad_id}")
+      |> put_resp_header("location", "/api/objects/#{object.norad_id}")
       |> render(:show, object: object, threat_assessment: nil)
     end
   end

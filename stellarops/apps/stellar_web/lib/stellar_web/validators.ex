@@ -395,17 +395,19 @@ defmodule StellarWeb.Validators do
         {:ok, nil}
         
       value when is_binary(value) ->
-        atom_value = String.to_existing_atom(value)
-        if atom_value in valid_values do
-          {:ok, atom_value}
-        else
-          valid_str = Enum.map_join(valid_values, ", ", &to_string/1)
-          {:error, [{key, "must be one of: #{valid_str}"}]}
+        try do
+          atom_value = String.to_existing_atom(value)
+          if atom_value in valid_values do
+            {:ok, atom_value}
+          else
+            valid_str = Enum.map_join(valid_values, ", ", &to_string/1)
+            {:error, [{key, "must be one of: #{valid_str}"}]}
+          end
+        rescue
+          ArgumentError ->
+            valid_str = Enum.map_join(valid_values, ", ", &to_string/1)
+            {:error, [{key, "must be one of: #{valid_str}"}]}
         end
-      rescue
-        ArgumentError ->
-          valid_str = Enum.map_join(valid_values, ", ", &to_string/1)
-          {:error, [{key, "must be one of: #{valid_str}"}]}
           
       value when is_atom(value) ->
         if value in valid_values do
