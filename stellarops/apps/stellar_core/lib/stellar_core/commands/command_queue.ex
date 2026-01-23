@@ -321,8 +321,8 @@ defmodule StellarCore.Commands.CommandQueue do
 
   defp add_to_queue(state, satellite_id, command) do
     queue = Map.get(state.queues, satellite_id, [])
-    # Insert sorted by priority (higher first) then created_at
-    sorted = [command | queue] |> Enum.sort_by(&{-&1.priority, &1.created_at})
+    # Insert sorted by priority (higher first) then inserted_at
+    sorted = [command | queue] |> Enum.sort_by(&{-&1.priority, &1.inserted_at})
     %{state | queues: Map.put(state.queues, satellite_id, sorted)}
   end
 

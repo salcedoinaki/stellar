@@ -115,10 +115,10 @@ defmodule StellarData.Users.User do
   """
   def valid_password?(%__MODULE__{password_hash: hash}, password) 
       when is_binary(hash) and is_binary(password) do
-    Bcrypt.verify_pass(password, hash)
+    Argon2.verify_pass(password, hash)
   end
 
-  def valid_password?(_, _), do: Bcrypt.no_user_verify()
+  def valid_password?(_, _), do: Argon2.no_user_verify()
 
   @doc """
   Checks if the user account is locked.
@@ -184,7 +184,7 @@ defmodule StellarData.Users.User do
 
       password ->
         changeset
-        |> put_change(:password_hash, Bcrypt.hash_pwd_salt(password))
+        |> put_change(:password_hash, Argon2.hash_pwd_salt(password))
         |> delete_change(:password)
     end
   end

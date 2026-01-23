@@ -3,8 +3,9 @@
 mod propagator_tests {
     use super::super::propagator::*;
 
-    const ISS_TLE_LINE1: &str = "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025";
-    const ISS_TLE_LINE2: &str = "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999";
+    // Valid ISS TLE from January 2024
+    const ISS_TLE_LINE1: &str = "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006";
+    const ISS_TLE_LINE2: &str = "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094";
 
     #[test]
     fn test_propagate_valid_tle() {
@@ -193,8 +194,8 @@ mod http_integration_tests {
         // For now, we test the request/response types
         let req = PropagateRequest {
             satellite_id: "ISS".to_string(),
-            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025".to_string(),
-            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999".to_string(),
+            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006".to_string(),
+            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094".to_string(),
             timestamp_unix: 1704067200,
         };
         
@@ -209,14 +210,14 @@ mod http_integration_tests {
             requests: vec![
                 PropagateRequest {
                     satellite_id: "SAT1".to_string(),
-                    tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025".to_string(),
-                    tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999".to_string(),
+                    tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006".to_string(),
+                    tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094".to_string(),
                     timestamp_unix: 1704067200,
                 },
                 PropagateRequest {
                     satellite_id: "SAT2".to_string(),
-                    tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025".to_string(),
-                    tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999".to_string(),
+                    tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006".to_string(),
+                    tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094".to_string(),
                     timestamp_unix: 1704067300,
                 },
             ],
@@ -229,14 +230,14 @@ mod http_integration_tests {
     async fn test_trajectory_request_structure() {
         let req = TrajectoryRequest {
             satellite_id: "ISS".to_string(),
-            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025".to_string(),
-            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999".to_string(),
-            start_unix: 1704067200,
-            end_unix: 1704070800,
+            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006".to_string(),
+            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094".to_string(),
+            start_timestamp_unix: 1704067200,
+            end_timestamp_unix: 1704070800,
             step_seconds: 60,
         };
         
-        assert!(req.end_unix > req.start_unix);
+        assert!(req.end_timestamp_unix > req.start_timestamp_unix);
         assert!(req.step_seconds > 0);
     }
 
@@ -244,8 +245,8 @@ mod http_integration_tests {
     async fn test_visibility_request_structure() {
         let req = VisibilityRequest {
             satellite_id: "ISS".to_string(),
-            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025".to_string(),
-            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999".to_string(),
+            tle_line1: "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006".to_string(),
+            tle_line2: "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094".to_string(),
             ground_station: GroundStation {
                 id: "GS1".to_string(),
                 name: "Test Station".to_string(),
@@ -254,8 +255,8 @@ mod http_integration_tests {
                 altitude_m: 10.0,
                 min_elevation_deg: 5.0,
             },
-            start_unix: 1704067200,
-            end_unix: 1704153600,
+            start_timestamp_unix: 1704067200,
+            end_timestamp_unix: 1704153600,
         };
         
         assert!(req.ground_station.latitude_deg.abs() <= 90.0);

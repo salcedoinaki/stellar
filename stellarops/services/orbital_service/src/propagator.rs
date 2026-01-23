@@ -574,8 +574,9 @@ mod tests {
     use super::*;
 
     // ISS TLE (example - will be outdated)
-    const ISS_TLE_LINE1: &str = "1 25544U 98067A   24001.50000000  .00016717  00000-0  10270-3 0  9025";
-    const ISS_TLE_LINE2: &str = "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579999999";
+    // Valid ISS TLE from January 2024
+    const ISS_TLE_LINE1: &str = "1 25544U 98067A   24001.50000000  .00016717  00000+0  10270-3 0  9006";
+    const ISS_TLE_LINE2: &str = "2 25544  51.6400 208.9163 0006703 130.5360 325.0288 15.50377579423094";
 
     #[test]
     fn test_propagate_iss() {

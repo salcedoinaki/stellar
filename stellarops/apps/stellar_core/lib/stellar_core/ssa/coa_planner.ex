@@ -91,11 +91,17 @@ defmodule StellarCore.SSA.COAPlanner do
 
   @impl true
   def init(_opts) do
+    # Use handle_continue to defer subscription until after init completes
+    # This ensures Phoenix.PubSub is fully available before subscribing
+    {:ok, %__MODULE__{processing: false}, {:continue, :subscribe}}
+  end
+
+  @impl true
+  def handle_continue(:subscribe, state) do
     # Subscribe to conjunction events
     Phoenix.PubSub.subscribe(StellarCore.PubSub, "ssa:conjunctions")
-
-    Logger.info("[COAPlanner] Started")
-    {:ok, %__MODULE__{processing: false}}
+    Logger.info("[COAPlanner] Started and subscribed to ssa:conjunctions")
+    {:noreply, state}
   end
 
   @impl true
