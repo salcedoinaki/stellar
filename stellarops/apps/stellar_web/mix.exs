@@ -37,6 +37,7 @@ defmodule StellarWeb.MixProject do
       # Authentication
       {:guardian, "~> 2.3"},
       {:argon2_elixir, "~> 4.0"},
+      {:elixir_make, "~> 0.8", runtime: false},
       # Observability - prom_ex with all required optional deps
       {:prom_ex, "~> 1.9"},
       {:finch, "~> 0.18"},

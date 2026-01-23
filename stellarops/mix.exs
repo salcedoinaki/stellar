@@ -14,6 +14,8 @@ defmodule Stellarops.MixProject do
 
   defp deps do
     [
+      # Build tools (required for native extensions)
+      {:elixir_make, "~> 0.8", runtime: false},
       # Development and test dependencies
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
