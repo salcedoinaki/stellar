@@ -30,73 +30,53 @@ defmodule StellarCore.Observability.Tracer do
       end
   """
 
-  require OpenTelemetry.Tracer, as: OtelTracer
-  require OpenTelemetry.Span
+  # TODO: Add opentelemetry and opentelemetry_api dependencies to enable tracing
+  # require OpenTelemetry.Tracer, as: OtelTracer
+  # require OpenTelemetry.Span
 
   @doc """
   Wraps code in a trace span.
   
-  ## Parameters
-  - name: The span name
-  - attributes: Optional map of attributes to attach to the span
-  - fun: The function to execute within the span
-  
-  ## Examples
-  
-      Tracer.with_span("fetch_satellite_data", fn ->
-        # fetch data
-      end)
-      
-      Tracer.with_span("process_conjunction", %{severity: "high"}, fn ->
-        # process conjunction
-      end)
+  NOTE: This is currently a no-op placeholder. Add OpenTelemetry dependencies to enable tracing.
   """
-  defmacro with_span(name, attributes \\ %{}, do: block) do
+  defmacro with_span(_name, attributes \\ %{}, do: block) do
     quote do
-      require OpenTelemetry.Tracer, as: OtelTracer
-      
-      OtelTracer.with_span unquote(name), %{attributes: map_to_attributes(unquote(attributes))} do
-        try do
-          result = unquote(block)
-          OpenTelemetry.Span.set_status(OpenTelemetry.Tracer.current_span_ctx(), :ok, "")
-          result
-        rescue
-          e ->
-            ctx = OpenTelemetry.Tracer.current_span_ctx()
-            OpenTelemetry.Span.set_status(ctx, :error, Exception.message(e))
-            OpenTelemetry.Span.record_exception(ctx, e, __STACKTRACE__)
-            reraise e, __STACKTRACE__
-        end
-      end
+      _ = unquote(attributes)
+      unquote(block)
     end
   end
 
   @doc """
-  Adds attributes to the current span.
+  Adds attributes to the current span. (No-op)
   """
-  def set_attributes(attributes) when is_map(attributes) do
-    ctx = OpenTelemetry.Tracer.current_span_ctx()
-    OpenTelemetry.Span.set_attributes(ctx, map_to_attributes(attributes))
-  end
+  def set_attributes(_attributes), do: :ok
 
   @doc """
-  Sets the status of the current span.
+  Sets the status of the current span. (No-op)
   """
-  def set_status(:ok), do: set_status(:ok, "")
-  def set_status(:error, message) do
-    ctx = OpenTelemetry.Tracer.current_span_ctx()
-    OpenTelemetry.Span.set_status(ctx, :error, message)
-  end
-  def set_status(:ok, message) do
-    ctx = OpenTelemetry.Tracer.current_span_ctx()
-    OpenTelemetry.Span.set_status(ctx, :ok, message)
-  end
+  def set_status(:ok), do: :ok
+  def set_status(:ok, _message), do: :ok
+  def set_status(:error, _message), do: :ok
 
   @doc """
-  Adds an event to the current span.
+  Adds an event to the current span. (No-op)
   """
-  def add_event(name, attributes \\ %{}) do
-    ctx = OpenTelemetry.Tracer.current_span_ctx()
+  def add_event(_name, _attributes \\ %{}), do: :ok
+
+  @doc """
+  Records an exception in the current span. (No-op)
+  """
+  def record_exception(_exception, _stacktrace \\ []), do: :ok
+
+  @doc """
+  Gets the current trace ID. (No-op)
+  """
+  def current_trace_id(), do: nil
+
+  @doc """
+  Gets the current span ID. (No-op)
+  """
+  def current_span_id(), do: nil
     OpenTelemetry.Span.add_event(ctx, name, map_to_attributes(attributes))
   end
 

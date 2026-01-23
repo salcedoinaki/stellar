@@ -405,7 +405,7 @@ async fn trajectory_handler(
     }
 
     // Validate time range
-    if req.end_unix <= req.start_unix {
+    if req.end_timestamp_unix <= req.start_timestamp_unix {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(TrajectoryResponse {
@@ -420,8 +420,8 @@ async fn trajectory_handler(
     match propagator::propagate_trajectory(
         &req.tle_line1,
         &req.tle_line2,
-        req.start_unix,
-        req.end_unix,
+        req.start_timestamp_unix,
+        req.end_timestamp_unix,
         req.step_seconds,
     ) {
         Ok(trajectory) => {
@@ -520,11 +520,11 @@ async fn visibility_handler(
                 .map(|pass| VisibilityPass {
                     aos_timestamp_unix: pass.aos_timestamp,
                     los_timestamp_unix: pass.los_timestamp,
-                    tca_timestamp_unix: Some(pass.tca_timestamp),
+                    tca_timestamp_unix: pass.tca_timestamp,
                     max_elevation_deg: pass.max_elevation_deg,
-                    aos_azimuth_deg: Some(pass.aos_azimuth_deg),
-                    los_azimuth_deg: Some(pass.los_azimuth_deg),
-                    duration_seconds: pass.duration_seconds,
+                    aos_azimuth_deg: pass.aos_azimuth_deg,
+                    los_azimuth_deg: pass.los_azimuth_deg,
+                    duration_seconds: pass.duration_seconds.unwrap_or(0),
                 })
                 .collect();
 
