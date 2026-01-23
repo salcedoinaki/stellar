@@ -178,6 +178,60 @@ defmodule StellarData.COAs do
   end
 
   @doc """
+  Lists all pending COAs (proposed, selected, executing) that need attention.
+  """
+  def list_pending_coas do
+    COA
+    |> where([c], c.status in [:proposed, :selected])
+    |> order_by([c], [asc: :risk_score, desc: :inserted_at])
+    |> Repo.all()
+  end
+
+  @doc """
+  Lists urgent COAs - those with conjunctions happening within the given hours.
+  """
+  def list_urgent_coas(hours \\ 24) do
+    cutoff = DateTime.add(DateTime.utc_now(), hours * 3600, :second)
+
+    COA
+    |> join(:inner, [c], conj in assoc(c, :conjunction))
+    |> where([c, conj], c.status in [:proposed, :selected])
+    |> where([c, conj], conj.tca <= ^cutoff)
+    |> order_by([c, conj], asc: conj.tca)
+    |> preload(:conjunction)
+    |> Repo.all()
+  end
+
+  @doc """
+  Lists COAs with optional filters.
+  
+  ## Options
+    - :satellite_id - Filter by satellite
+    - :status - Filter by status
+    - :limit - Max results
+  """
+  def list_coas(opts \\ []) do
+    COA
+    |> apply_coa_filters(opts)
+    |> order_by([c], desc: c.inserted_at)
+    |> limit(^(opts[:limit] || 100))
+    |> Repo.all()
+  end
+
+  defp apply_coa_filters(query, opts) do
+    Enum.reduce(opts, query, fn
+      {:satellite_id, satellite_id}, q when not is_nil(satellite_id) ->
+        q |> join(:inner, [c], conj in assoc(c, :conjunction))
+          |> where([c, conj], conj.satellite_id == ^satellite_id)
+      
+      {:status, status}, q when not is_nil(status) ->
+        where(q, [c], c.status == ^status)
+      
+      _, q -> q
+    end)
+  end
+
+  @doc """
   Lists all executing COAs.
   """
   def list_executing_coas do

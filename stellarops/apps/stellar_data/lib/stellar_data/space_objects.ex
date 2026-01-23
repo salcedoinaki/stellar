@@ -36,6 +36,11 @@ defmodule StellarData.SpaceObjects do
   end
 
   @doc """
+  Alias for list_objects/1 for backwards compatibility.
+  """
+  def list_space_objects(opts \\ []), do: list_objects(opts)
+
+  @doc """
   Gets a single space object.
 
   Raises `Ecto.NoResultsError` if the SpaceObject does not exist.

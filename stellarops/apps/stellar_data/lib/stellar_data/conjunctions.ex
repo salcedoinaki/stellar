@@ -304,33 +304,55 @@ defmodule StellarData.Conjunctions do
     next_7d = DateTime.add(now, 7 * 24 * 60 * 60, :second)
 
     by_severity = count_by_severity()
+    by_status = count_by_status()
 
-    total_active =
+    total_upcoming =
       Conjunction
       |> where([c], c.status in [:active, :monitoring, :predicted])
+      |> where([c], c.tca >= ^now)
       |> Repo.aggregate(:count, :id)
 
-    upcoming_24h =
+    critical_24h =
       Conjunction
       |> where([c], c.status in [:active, :monitoring, :predicted])
+      |> where([c], c.severity in [:critical, :high])
       |> where([c], c.tca >= ^now and c.tca <= ^next_24h)
       |> Repo.aggregate(:count, :id)
 
-    upcoming_7d =
+    critical_7d =
       Conjunction
       |> where([c], c.status in [:active, :monitoring, :predicted])
+      |> where([c], c.severity in [:critical, :high])
       |> where([c], c.tca >= ^now and c.tca <= ^next_7d)
       |> Repo.aggregate(:count, :id)
 
+    # Count approved maneuver COAs (pending execution)
+    maneuvers_pending = 0  # Will be populated from COA module if available
+
     %{
-      total_active: total_active || 0,
-      critical: Map.get(by_severity, :critical, 0),
-      high: Map.get(by_severity, :high, 0),
-      medium: Map.get(by_severity, :medium, 0),
-      low: Map.get(by_severity, :low, 0),
-      upcoming_24h: upcoming_24h || 0,
-      upcoming_7d: upcoming_7d || 0
+      total_upcoming: total_upcoming || 0,
+      critical_next_24h: critical_24h || 0,
+      critical_next_7d: critical_7d || 0,
+      maneuvers_pending: maneuvers_pending,
+      by_severity: %{
+        critical: Map.get(by_severity, :critical, 0),
+        high: Map.get(by_severity, :high, 0),
+        medium: Map.get(by_severity, :medium, 0),
+        low: Map.get(by_severity, :low, 0)
+      },
+      by_status: by_status
     }
+  end
+
+  @doc """
+  Counts active conjunctions by status.
+  """
+  def count_by_status do
+    Conjunction
+    |> group_by([c], c.status)
+    |> select([c], {c.status, count(c.id)})
+    |> Repo.all()
+    |> Enum.into(%{})
   end
 
   @doc """
