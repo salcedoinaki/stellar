@@ -14,14 +14,10 @@ defmodule StellarCore.Orbital.Cache do
   @doc """
   Child spec for starting the cache under a supervisor.
   """
-  def child_spec(opts) do
-    ttl = Keyword.get(opts, :ttl, @default_ttl)
-
+  def child_spec(_opts) do
     %{
       id: __MODULE__,
-      start: {Cachex, :start_link, [@cache_name, [
-        expiration: [default: ttl, interval: :timer.seconds(60), lazy: true]
-      ]]},
+      start: {Cachex, :start_link, [@cache_name, []]},
       type: :worker
     }
   end
@@ -35,7 +31,7 @@ defmodule StellarCore.Orbital.Cache do
         # Cache miss - execute function and cache result
         case fun.() do
           {:ok, result} = success ->
-            Cachex.put(@cache_name, key, result)
+            Cachex.put(@cache_name, key, result, ttl: @default_ttl)
             success
 
           error ->
