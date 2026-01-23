@@ -16,11 +16,12 @@ defmodule StellarCore.Orbital.HttpClient do
   Called from the application supervisor.
   """
   def child_spec(_opts) do
-    {Finch,
-     name: __MODULE__.Finch,
-     pools: %{
-       default: [size: 25, count: 5]
-     }}
+    Finch.child_spec(
+      name: __MODULE__.Finch,
+      pools: %{
+        default: [size: 25, count: 5]
+      }
+    )
   end
 
   @doc """

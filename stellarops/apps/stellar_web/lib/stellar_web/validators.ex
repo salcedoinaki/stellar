@@ -269,7 +269,6 @@ defmodule StellarWeb.Validators do
   def sanitize_string(string) when is_binary(string) do
     string
     |> String.trim()
-    |> HtmlEntities.decode()
     |> String.replace(~r/<[^>]*>/, "")  # Remove HTML tags
     |> String.replace(~r/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/, "")  # Remove control chars
   end

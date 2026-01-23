@@ -38,7 +38,7 @@ defmodule StellarWeb.COAJSON do
       id: coa.id,
       type: coa.type,
       delta_v_magnitude: coa.delta_v_magnitude,
-      delta_v_vector: coa.delta_v_vector,
+      delta_v_direction: coa.delta_v_direction,
       burn_start_time: coa.burn_start_time,
       burn_duration_seconds: coa.burn_duration_seconds,
       risk_score: coa.risk_score,
