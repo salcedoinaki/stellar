@@ -208,12 +208,12 @@ defmodule StellarCore.TLEIngester.TLEParser do
       {mantissa_str, exp_str} = String.split_at(str, -2)
       
       sign = if String.starts_with?(mantissa_str, "-"), do: -1, else: 1
-      mantissa_str = String.replace(mantissa_str, ~r/^[+-\s]/, "")
+      mantissa_str = String.replace(mantissa_str, ~r/^[+\-\s]/, "")
       
       mantissa = String.to_integer(mantissa_str) / 100000.0
       
       exp_sign = if String.starts_with?(exp_str, "-"), do: -1, else: 1
-      exp = String.replace(exp_str, ~r/^[+-]/, "") |> String.to_integer()
+      exp = String.replace(exp_str, ~r/^[+\-]/, "") |> String.to_integer()
       
       sign * mantissa * :math.pow(10, exp_sign * exp)
     end

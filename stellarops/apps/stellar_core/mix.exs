@@ -30,6 +30,7 @@ defmodule StellarCore.MixProject do
       {:finch, "~> 0.18"},
       {:fuse, "~> 2.5"},
       {:cachex, "~> 3.6"},
+      {:horde, "~> 0.9"},
       {:stream_data, "~> 1.0", only: [:test, :dev]}
     ]
   end

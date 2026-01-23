@@ -212,6 +212,8 @@ defmodule StellarWeb.Auth.TokenRevocation do
   end
   
   defp persist_user_revocation(user_id, revoked_at) do
+    import Ecto.Query
+    
     # Update user's tokens_revoked_at field
     StellarData.Repo.update_all(
       from(u in "users", where: u.id == ^user_id),
