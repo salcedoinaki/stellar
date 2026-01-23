@@ -57,6 +57,15 @@ defmodule StellarCore.Satellite.Registry do
   end
 
   @doc """
+  Returns a list of all registered satellites as {id, pid} tuples.
+  """
+  @spec list_satellites() :: [{String.t(), pid()}]
+  def list_satellites do
+    @registry_name
+    |> Registry.select([{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+  end
+
+  @doc """
   Child spec for starting the registry under a supervisor.
   """
   def child_spec(_opts) do

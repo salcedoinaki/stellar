@@ -207,6 +207,71 @@ defmodule StellarData.Conjunctions do
   end
 
   @doc """
+  Lists all critical conjunctions (high collision probability or very close approach).
+
+  ## Examples
+
+      iex> list_critical_conjunctions()
+      [%Conjunction{severity: "critical"}, ...]
+
+  """
+  def list_critical_conjunctions do
+    now = DateTime.utc_now()
+    next_24h = DateTime.add(now, 24 * 60 * 60, :second)
+
+    Conjunction
+    |> where([c], c.status in ["active", "monitoring"])
+    |> where([c], c.severity in ["critical", "high"] or c.tca <= ^next_24h)
+    |> order_by([c], asc: c.tca)
+    |> preload(:object)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns statistics about conjunctions.
+
+  ## Examples
+
+      iex> get_statistics()
+      %{total_active: 10, critical: 2, high: 5, ...}
+
+  """
+  def get_statistics do
+    now = DateTime.utc_now()
+    next_24h = DateTime.add(now, 24 * 60 * 60, :second)
+    next_7d = DateTime.add(now, 7 * 24 * 60 * 60, :second)
+
+    by_severity = count_by_severity()
+
+    total_active =
+      Conjunction
+      |> where([c], c.status in ["active", "monitoring"])
+      |> Repo.aggregate(:count, :id)
+
+    upcoming_24h =
+      Conjunction
+      |> where([c], c.status in ["active", "monitoring"])
+      |> where([c], c.tca >= ^now and c.tca <= ^next_24h)
+      |> Repo.aggregate(:count, :id)
+
+    upcoming_7d =
+      Conjunction
+      |> where([c], c.status in ["active", "monitoring"])
+      |> where([c], c.tca >= ^now and c.tca <= ^next_7d)
+      |> Repo.aggregate(:count, :id)
+
+    %{
+      total_active: total_active || 0,
+      critical: Map.get(by_severity, "critical", 0),
+      high: Map.get(by_severity, "high", 0),
+      medium: Map.get(by_severity, "medium", 0),
+      low: Map.get(by_severity, "low", 0),
+      upcoming_24h: upcoming_24h || 0,
+      upcoming_7d: upcoming_7d || 0
+    }
+  end
+
+  @doc """
   Expires conjunctions whose TCA has passed.
 
   Returns the number of updated records.
