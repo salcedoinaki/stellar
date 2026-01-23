@@ -200,9 +200,11 @@ defmodule StellarCore.Resilience do
   
   defp handle_degraded(operation, fallback_fn, cache_key) do
     Logger.warning("Operation #{operation} degraded, attempting fallback")
-    
+
+    cached = if cache_key, do: get_cached(cache_key), else: nil
+
     cond do
-      cache_key && cached = get_cached(cache_key) ->
+      cache_key && cached ->
         Logger.info("Using cached result for #{operation}")
         {:ok, cached}
         
