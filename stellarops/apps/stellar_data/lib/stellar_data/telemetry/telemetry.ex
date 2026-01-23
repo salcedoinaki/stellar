@@ -22,6 +22,40 @@ defmodule StellarData.Telemetry do
   end
 
   @doc """
+  Creates a telemetry event from a map of attributes.
+  
+  This is the preferred method for the TelemetryIngester.
+  """
+  def create_event(attrs) when is_map(attrs) do
+    # Normalize payload field to data field
+    attrs = if Map.has_key?(attrs, :payload) do
+      attrs
+      |> Map.put(:data, Map.get(attrs, :payload))
+      |> Map.delete(:payload)
+    else
+      attrs
+    end
+
+    %TelemetryEvent{}
+    |> TelemetryEvent.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Delete events recorded before the given datetime.
+  
+  Returns {:ok, count} with the number of deleted records.
+  """
+  def delete_events_before(%DateTime{} = cutoff) do
+    {count, _} = 
+      TelemetryEvent
+      |> where([e], e.recorded_at < ^cutoff)
+      |> Repo.delete_all()
+    
+    {:ok, count}
+  end
+
+  @doc """
   Gets telemetry events for a satellite.
 
   Options:
