@@ -32,16 +32,13 @@ defmodule StellarWeb.SpaceObjectJSON do
       international_designator: object.international_designator,
       object_type: object.object_type,
       owner: object.owner,
-      country_code: object.country_code,
       status: object.status,
-      orbital_status: object.orbital_status,
       orbit_type: object.orbit_type,
       orbital_parameters: %{
         inclination_deg: object.inclination_deg,
         apogee_km: object.apogee_km,
         perigee_km: object.perigee_km,
         period_minutes: object.period_minutes,
-        period_min: object.period_min,
         semi_major_axis_km: object.semi_major_axis_km,
         eccentricity: object.eccentricity,
         raan_deg: object.raan_deg,
@@ -58,7 +55,6 @@ defmodule StellarWeb.SpaceObjectJSON do
       },
       physical_characteristics: %{
         radar_cross_section: object.radar_cross_section,
-        rcs_meters: object.rcs_meters,
         size_class: object.size_class,
         launch_date: object.launch_date,
         launch_site: object.launch_site
@@ -68,6 +64,12 @@ defmodule StellarWeb.SpaceObjectJSON do
         observation_count: object.observation_count,
         data_source: object.data_source
       },
+      threat_info: %{
+        threat_level: object.threat_level,
+        classification: object.classification,
+        capabilities: object.capabilities,
+        intel_summary: object.intel_summary
+      },
       is_protected_asset: object.is_protected_asset,
       satellite_id: object.satellite_id,
       notes: object.notes,
@@ -75,15 +77,10 @@ defmodule StellarWeb.SpaceObjectJSON do
       updated_at: object.updated_at
     }
 
-    # Add threat assessment if provided, otherwise include inline fields
+    # Add threat assessment if provided
     case threat_assessment do
       nil ->
-        Map.put(base_data, :threat_assessment, %{
-          threat_level: object.threat_level,
-          classification: object.classification,
-          capabilities: object.capabilities,
-          intel_summary: object.intel_summary
-        })
+        base_data
 
       assessment ->
         Map.put(base_data, :threat_assessment, threat_data(assessment))

@@ -18,8 +18,8 @@ export default function OrbitalView() {
           api.satellites.list(),
           api.conjunctions.list({ status: 'detected' }),
         ])
-        setSatellites(sats)
-        setConjunctions(conjs)
+        setSatellites(sats || [])
+        setConjunctions(conjs || [])
         
         // Mock ground stations for now
         setGroundStations([

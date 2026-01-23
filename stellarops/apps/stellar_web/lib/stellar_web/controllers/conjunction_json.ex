@@ -71,13 +71,3 @@ defmodule StellarWeb.ConjunctionJSON do
     }
   end
 end
-        Map.put(data, :threat_assessment, %{
-          classification: assessment.classification,
-          threat_level: assessment.threat_level,
-          capabilities: assessment.capabilities,
-          confidence_level: assessment.confidence_level,
-          intel_summary: assessment.intel_summary
-        })
-    end
-  end
-end

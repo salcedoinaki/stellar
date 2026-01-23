@@ -161,21 +161,21 @@ export default function ThreatDashboard() {
                   />
                   <MetricCard
                     label="Miss Distance"
-                    value={`${conjunction.miss_distance_km.toFixed(3)} km`}
-                    subValue={`${(conjunction.miss_distance_km * 1000).toFixed(0)} m`}
+                    value={`${(conjunction.miss_distance_km ?? 0).toFixed(3)} km`}
+                    subValue={`${((conjunction.miss_distance_km ?? 0) * 1000).toFixed(0)} m`}
                   />
                   <MetricCard
                     label="Relative Velocity"
-                    value={`${conjunction.relative_velocity_km_s.toFixed(2)} km/s`}
-                    subValue={`${(conjunction.relative_velocity_km_s * 1000).toFixed(0)} m/s`}
+                    value={`${(conjunction.relative_velocity_km_s ?? 0).toFixed(2)} km/s`}
+                    subValue={`${((conjunction.relative_velocity_km_s ?? 0) * 1000).toFixed(0)} m/s`}
                   />
                   <MetricCard
                     label="Collision Probability"
-                    value={conjunction.probability < 0.0001 
+                    value={(conjunction.probability ?? 0) < 0.0001 
                       ? '< 0.01%' 
-                      : `${(conjunction.probability * 100).toFixed(2)}%`}
-                    subValue={`1 in ${Math.round(1 / conjunction.probability).toLocaleString()}`}
-                    highlight={conjunction.probability > 0.001}
+                      : `${((conjunction.probability ?? 0) * 100).toFixed(2)}%`}
+                    subValue={conjunction.probability ? `1 in ${Math.round(1 / conjunction.probability).toLocaleString()}` : 'N/A'}
+                    highlight={(conjunction.probability ?? 0) > 0.001}
                   />
                 </div>
               </div>
@@ -258,9 +258,9 @@ export default function ThreatDashboard() {
                     <h4 className="text-xs text-slate-500 mb-2">Asset Position</h4>
                     {conjunction.asset_position_at_tca ? (
                       <div className="font-mono text-sm text-slate-300">
-                        <div>X: {conjunction.asset_position_at_tca.x_km.toFixed(3)} km</div>
-                        <div>Y: {conjunction.asset_position_at_tca.y_km.toFixed(3)} km</div>
-                        <div>Z: {conjunction.asset_position_at_tca.z_km.toFixed(3)} km</div>
+                        <div>X: {(conjunction.asset_position_at_tca.x_km ?? 0).toFixed(3)} km</div>
+                        <div>Y: {(conjunction.asset_position_at_tca.y_km ?? 0).toFixed(3)} km</div>
+                        <div>Z: {(conjunction.asset_position_at_tca.z_km ?? 0).toFixed(3)} km</div>
                       </div>
                     ) : (
                       <span className="text-slate-500">Not available</span>
@@ -270,9 +270,9 @@ export default function ThreatDashboard() {
                     <h4 className="text-xs text-slate-500 mb-2">Object Position</h4>
                     {conjunction.object_position_at_tca ? (
                       <div className="font-mono text-sm text-slate-300">
-                        <div>X: {conjunction.object_position_at_tca.x_km.toFixed(3)} km</div>
-                        <div>Y: {conjunction.object_position_at_tca.y_km.toFixed(3)} km</div>
-                        <div>Z: {conjunction.object_position_at_tca.z_km.toFixed(3)} km</div>
+                        <div>X: {(conjunction.object_position_at_tca.x_km ?? 0).toFixed(3)} km</div>
+                        <div>Y: {(conjunction.object_position_at_tca.y_km ?? 0).toFixed(3)} km</div>
+                        <div>Z: {(conjunction.object_position_at_tca.z_km ?? 0).toFixed(3)} km</div>
                       </div>
                     ) : (
                       <span className="text-slate-500">Not available</span>
@@ -337,9 +337,9 @@ function ConjunctionListItem({ conjunction, isSelected, onClick }: ConjunctionLi
       <div className="flex items-center justify-between text-xs mt-1">
         <span className="text-slate-500">Miss:</span>
         <span className="font-mono text-slate-300">
-          {conjunction.miss_distance_km < 1 
-            ? `${(conjunction.miss_distance_km * 1000).toFixed(0)} m`
-            : `${conjunction.miss_distance_km.toFixed(2)} km`}
+          {(conjunction.miss_distance_km ?? 0) < 1 
+            ? `${((conjunction.miss_distance_km ?? 0) * 1000).toFixed(0)} m`
+            : `${(conjunction.miss_distance_km ?? 0).toFixed(2)} km`}
         </span>
       </div>
     </button>

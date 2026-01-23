@@ -198,10 +198,10 @@ export default function OrbitalViewer({
       ctx.fill()
 
       // Satellite label
-      if (showLabels) {
+      if (showLabels && satellite.id) {
         ctx.fillStyle = '#e2e8f0'
         ctx.font = '11px monospace'
-        ctx.fillText(satellite.id.slice(0, 8), px + 8, py + 3)
+        ctx.fillText(String(satellite.id).slice(0, 8), px + 8, py + 3)
       }
     })
 

@@ -106,10 +106,11 @@ export function ThreatMap({
       const pos = objectToPosition(obj)
       let type: ObjectMarker['type'] = 'neutral'
       
+      const threatLevel = obj.threat_assessment?.threat_level ?? 'none'
+      
       if (protectedIds.has(obj.id) || obj.is_protected_asset) {
         type = 'protected'
-      } else if (obj.threat_assessment.threat_level === 'high' || 
-                 obj.threat_assessment.threat_level === 'critical') {
+      } else if (threatLevel === 'high' || threatLevel === 'critical') {
         type = 'threat'
       } else if (obj.object_type === 'debris') {
         type = 'debris'
@@ -120,7 +121,7 @@ export function ThreatMap({
         x: pos.x,
         y: pos.y,
         type,
-        threatLevel: obj.threat_assessment.threat_level,
+        threatLevel,
         name: obj.name,
         noradId: obj.norad_id
       }
@@ -178,11 +179,11 @@ export function ThreatMap({
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span>Threats ({spaceObjects.filter(o => ['high', 'critical'].includes(o.threat_assessment.threat_level)).length})</span>
+            <span>Threats ({spaceObjects.filter(o => ['high', 'critical'].includes(o.threat_assessment?.threat_level ?? 'none')).length})</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-gray-400" />
-            <span>Other Objects ({spaceObjects.filter(o => !['high', 'critical'].includes(o.threat_assessment.threat_level) && !o.is_protected_asset).length})</span>
+            <span>Other Objects ({spaceObjects.filter(o => !['high', 'critical'].includes(o.threat_assessment?.threat_level ?? 'none') && !o.is_protected_asset).length})</span>
           </div>
         </div>
       </div>

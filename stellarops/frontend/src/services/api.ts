@@ -165,6 +165,18 @@ export async function checkOrbitalHealth(): Promise<{ status: string; uptime_sec
 // Space Objects API (SSA)
 // ============================================================================
 
+// Transform space object to ensure threat_assessment exists
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformSpaceObject(raw: any): SpaceObject {
+  return {
+    ...raw,
+    threat_assessment: raw.threat_assessment ?? {
+      threat_level: 'none',
+      is_active_threat: false,
+    },
+  }
+}
+
 export interface SpaceObjectFilters {
   object_type?: string
   threat_level?: string
@@ -187,44 +199,51 @@ export async function fetchSpaceObjects(filters?: SpaceObjectFilters): Promise<S
   const queryString = params.toString()
   const url = `${API_BASE}/api/space_objects${queryString ? `?${queryString}` : ''}`
   const response = await fetch(url)
-  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformSpaceObject)
 }
 
 export async function fetchSpaceObject(id: string): Promise<SpaceObject> {
   const response = await fetch(`${API_BASE}/api/space_objects/${id}`)
-  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformSpaceObject(data.data)
 }
 
 export async function fetchSpaceObjectByNorad(noradId: number): Promise<SpaceObject> {
   const response = await fetch(`${API_BASE}/api/space_objects/norad/${noradId}`)
-  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformSpaceObject(data.data)
 }
 
 export async function fetchHighThreatObjects(): Promise<SpaceObject[]> {
   const response = await fetch(`${API_BASE}/api/space_objects/high_threat`)
-  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformSpaceObject)
 }
 
 export async function fetchProtectedAssets(): Promise<SpaceObject[]> {
   const response = await fetch(`${API_BASE}/api/space_objects/protected_assets`)
-  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformSpaceObject)
 }
 
 export async function fetchDebrisObjects(): Promise<SpaceObject[]> {
   const response = await fetch(`${API_BASE}/api/space_objects/debris`)
-  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformSpaceObject)
 }
 
 export async function searchSpaceObjects(query: string): Promise<SpaceObject[]> {
   const response = await fetch(`${API_BASE}/api/space_objects/search?q=${encodeURIComponent(query)}`)
-  const data = await handleResponse<ApiResponse<SpaceObject[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformSpaceObject)
 }
 
 export async function updateThreatAssessment(
@@ -236,13 +255,66 @@ export async function updateThreatAssessment(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(assessment),
   })
-  const data = await handleResponse<ApiResponse<SpaceObject>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformSpaceObject(data.data)
 }
 
 // ============================================================================
 // Conjunctions API
 // ============================================================================
+
+// Transform backend conjunction response to frontend format
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformConjunction(raw: any): Conjunction {
+  // Convert backend field names to frontend expected names
+  const missDistanceM = raw.miss_distance_m ?? 0
+  const missDistanceKm = missDistanceM / 1000
+
+  // Build object with rcs_meters from secondary_object
+  const secondaryObject = raw.secondary_object
+    ? {
+        ...raw.secondary_object,
+        rcs_meters: raw.secondary_object.rcs_meters ?? 0.1, // Default if not provided
+      }
+    : undefined
+
+  return {
+    ...raw,
+    // Map new field names to legacy field names expected by UI
+    miss_distance_km: missDistanceKm,
+    miss_distance: {
+      total_m: missDistanceM,
+      radial_m: raw.miss_distance_radial_m ?? 0,
+      in_track_m: raw.miss_distance_in_track_m ?? 0,
+      cross_track_m: raw.miss_distance_cross_track_m ?? 0,
+      uncertainty_m: raw.miss_distance_uncertainty_m ?? 0,
+    },
+    relative_velocity_km_s: (raw.relative_velocity_ms ?? 0) / 1000,
+    probability: raw.collision_probability ?? 0,
+    // Map object references
+    object: secondaryObject,
+    object_id: raw.secondary_object_id,
+    asset_id: raw.satellite_id ?? raw.primary_object_id,
+    asset: raw.primary_object
+      ? {
+          id: raw.primary_object.id,
+          name: raw.primary_object.name,
+        }
+      : undefined,
+    // Position data at TCA (mock if not provided by backend)
+    asset_position_at_tca: raw.asset_position_at_tca ?? {
+      x_km: 0,
+      y_km: 0,
+      z_km: 0,
+    },
+    object_position_at_tca: raw.object_position_at_tca ?? {
+      x_km: 0,
+      y_km: 0,
+      z_km: 0,
+    },
+  }
+}
 
 export interface ConjunctionFilters {
   satellite_id?: string
@@ -271,20 +343,23 @@ export async function fetchConjunctions(filters?: ConjunctionFilters): Promise<C
   const queryString = params.toString()
   const url = `${API_BASE}/api/conjunctions${queryString ? `?${queryString}` : ''}`
   const response = await fetch(url)
-  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformConjunction)
 }
 
 export async function fetchCriticalConjunctions(): Promise<Conjunction[]> {
   const response = await fetch(`${API_BASE}/api/conjunctions/critical`)
-  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformConjunction)
 }
 
 export async function fetchConjunction(id: string): Promise<Conjunction> {
   const response = await fetch(`${API_BASE}/api/conjunctions/${id}`)
-  const data = await handleResponse<ApiResponse<Conjunction>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformConjunction(data.data)
 }
 
 export async function acknowledgeConjunction(id: string): Promise<Conjunction> {
@@ -292,8 +367,9 @@ export async function acknowledgeConjunction(id: string): Promise<Conjunction> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   })
-  const data = await handleResponse<ApiResponse<Conjunction>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformConjunction(data.data)
 }
 
 export async function resolveConjunction(id: string): Promise<Conjunction> {
@@ -301,8 +377,9 @@ export async function resolveConjunction(id: string): Promise<Conjunction> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   })
-  const data = await handleResponse<ApiResponse<Conjunction>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any>>(response)
+  return transformConjunction(data.data)
 }
 
 export async function fetchConjunctionStatistics(): Promise<ConjunctionStatistics> {
@@ -326,8 +403,9 @@ export async function triggerScreening(): Promise<{ status: string; message: str
 
 export async function fetchConjunctionsForSatellite(satelliteId: string): Promise<Conjunction[]> {
   const response = await fetch(`${API_BASE}/api/conjunctions/satellite/${satelliteId}`)
-  const data = await handleResponse<ApiResponse<Conjunction[]>>(response)
-  return data.data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await handleResponse<ApiResponse<any[]>>(response)
+  return (data.data || []).map(transformConjunction)
 }
 
 // ============================================================================
