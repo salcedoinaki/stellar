@@ -13,6 +13,10 @@ export default function Layout({ children }: LayoutProps) {
   const navLinks = [
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/satellites', label: 'Satellites', icon: '🛰️' },
+    { path: '/threats', label: 'Threats', icon: '⚠️' },
+    { path: '/missions', label: 'Missions', icon: '📋' },
+    { path: '/alarms', label: 'Alarms', icon: '🔔' },
+    { path: '/orbital', label: 'Orbital', icon: '🌍' },
     { path: '/map', label: 'Map', icon: '🗺️' },
   ]
 

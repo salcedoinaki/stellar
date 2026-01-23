@@ -302,23 +302,24 @@ export interface Mission {
 // Alarm Types (Phase 4)
 // ============================================================================
 
-export type AlarmSeverity = 'critical' | 'major' | 'minor' | 'warning'
+export type AlarmSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info'
 export type AlarmStatus = 'active' | 'acknowledged' | 'resolved'
 
 export interface Alarm {
   id: string
-  type: string
+  satellite_id: string
+  title: string
   message: string
+  type: string
   severity: AlarmSeverity
   status: AlarmStatus
-  source_type?: string
-  source_id?: string
-  details?: Record<string, unknown>
-  raised_at: string
+  acknowledged: boolean
+  triggered_at: string
   acknowledged_at?: string
   acknowledged_by?: string
   resolved_at?: string
-  resolved_by?: string
+  resolution?: string
+  data?: Record<string, unknown>
   inserted_at: string
   updated_at: string
 }

@@ -358,10 +358,11 @@ export async function acknowledgeAlarm(id: string): Promise<Alarm> {
   return data.data
 }
 
-export async function resolveAlarm(id: string): Promise<Alarm> {
+export async function resolveAlarm(id: string, resolution?: string): Promise<Alarm> {
   const response = await fetch(`${API_BASE}/api/alarms/${id}/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution }),
   })
   const data = await handleResponse<ApiResponse<Alarm>>(response)
   return data.data
@@ -426,7 +427,7 @@ export const api = {
     list: fetchAlarms,
     get: fetchAlarm,
     acknowledge: acknowledgeAlarm,
-    resolve: resolveAlarm,
+    resolve: resolveAlarm as (id: string, resolution?: string) => Promise<Alarm>,
     summary: fetchAlarmsSummary,
   },
 }

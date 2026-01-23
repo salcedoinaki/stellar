@@ -1,10 +1,15 @@
 import { Routes, Route } from 'react-router-dom'
 import { useEffect } from 'react'
 import Layout from './components/Layout'
+import ChatPanel from './components/ChatPanel'
 import Dashboard from './pages/Dashboard'
 import SatelliteList from './pages/SatelliteList'
 import SatelliteDetail from './pages/SatelliteDetail'
 import MapView from './pages/MapView'
+import ThreatDashboard from './pages/ThreatDashboard'
+import MissionDashboard from './pages/MissionDashboard'
+import AlarmDashboard from './pages/AlarmDashboard'
+import OrbitalView from './pages/OrbitalView'
 import { useSatelliteStore } from './store/satelliteStore'
 import { socketService } from './services/socket'
 
@@ -46,8 +51,13 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/satellites" element={<SatelliteList />} />
         <Route path="/satellites/:id" element={<SatelliteDetail />} />
+        <Route path="/threats" element={<ThreatDashboard />} />
+        <Route path="/missions" element={<MissionDashboard />} />
+        <Route path="/alarms" element={<AlarmDashboard />} />
+        <Route path="/orbital" element={<OrbitalView />} />
         <Route path="/map" element={<MapView />} />
       </Routes>
+      <ChatPanel />
     </Layout>
   )
 }
