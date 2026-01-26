@@ -155,6 +155,74 @@ defmodule StellarData.COAs do
   end
 
   @doc """
+  Approves a COA by ID.
+
+  ## Examples
+
+      iex> approve_coa("coa-uuid", "operator@stellarops.com")
+      {:ok, %COA{status: :approved}}
+
+  """
+  def approve_coa(coa_id, approved_by) when is_binary(coa_id) do
+    case get_coa(coa_id) do
+      nil -> {:error, :not_found}
+      coa ->
+        coa
+        |> COA.approve_changeset(approved_by)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Approves a COA struct with optional notes.
+
+  ## Examples
+
+      iex> approve_coa(%COA{}, "operator@stellarops.com", "Approved for execution")
+      {:ok, %COA{status: :selected}}
+
+  """
+  def approve_coa(%COA{} = coa, approved_by, _notes \\ nil) do
+    coa
+    |> COA.approve_changeset(approved_by)
+    |> Repo.update()
+  end
+
+  @doc """
+  Rejects a COA by ID with optional notes.
+
+  ## Examples
+
+      iex> reject_coa("coa-uuid", "operator@stellarops.com", "Insufficient fuel")
+      {:ok, %COA{status: :rejected}}
+
+  """
+  def reject_coa(coa_id, rejected_by, notes \\ nil) when is_binary(coa_id) do
+    case get_coa(coa_id) do
+      nil -> {:error, :not_found}
+      coa ->
+        coa
+        |> COA.reject_changeset(rejected_by, notes)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Rejects a COA struct with optional notes.
+
+  ## Examples
+
+      iex> reject_coa(%COA{}, "operator@stellarops.com", "Insufficient fuel")
+      {:ok, %COA{status: :rejected}}
+
+  """
+  def reject_coa(%COA{} = coa, rejected_by, notes) do
+    coa
+    |> COA.reject_changeset(rejected_by, notes)
+    |> Repo.update()
+  end
+
+  @doc """
   Deletes a COA.
 
   Only allows deletion of COAs in proposed or rejected status.

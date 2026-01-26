@@ -17,6 +17,10 @@ defmodule StellarCore.Scheduler.MissionScheduler do
   2. Checks satellite resource availability
   3. Schedules missions that can be executed
   4. Dispatches scheduled missions when it's time to run them
+
+  ## Constraints
+  - **One mission at a time per satellite**: A satellite must complete its
+    current mission before the next one can be dispatched
   """
 
   use GenServer
@@ -27,7 +31,20 @@ defmodule StellarCore.Scheduler.MissionScheduler do
   alias StellarCore.Satellite
 
   @tick_interval :timer.seconds(5)
-  @max_concurrent_per_satellite 3
+  @max_concurrent_per_satellite 1  # One mission at a time per satellite (realistic)
+
+  # Simulated mission execution durations by type (in ms)
+  # Real missions take hours to days; these are scaled for demos
+  @mission_durations %{
+    "imaging" => {120_000, 60_000},          # 2-3 minutes
+    "data_collection" => {180_000, 60_000},  # 3-4 minutes
+    "orbit_adjust" => {90_000, 30_000},      # 1.5-2 minutes
+    "downlink" => {60_000, 30_000},          # 1-1.5 minutes
+    "maintenance" => {150_000, 60_000},      # 2.5-3.5 minutes
+    "maneuver" => {120_000, 60_000},         # 2-3 minutes
+    "communication" => {60_000, 30_000},     # 1-1.5 minutes
+    "default" => {60_000, 30_000}            # 1-1.5 minutes
+  }
 
   # ============================================================================
   # Client API
@@ -231,10 +248,17 @@ defmodule StellarCore.Scheduler.MissionScheduler do
   defp can_schedule_mission?(mission, state) do
     satellite_id = mission.satellite_id
 
-    # Check concurrent mission limit
-    running_count = get_running_count(state, satellite_id)
+    # Check in-memory state first (catches same-tick scheduling)
+    in_memory_count = length(Map.get(state.running_missions, satellite_id, []))
 
-    if running_count >= state.max_concurrent do
+    # Also check database (catches missions running from before restart)
+    db_count = Missions.count_running_for_satellite(satellite_id)
+
+    # Use the higher of the two counts (handles both cases)
+    running_count = max(in_memory_count, db_count)
+
+    if running_count >= 1 do
+      # One mission at a time per satellite
       false
     else
       # Check satellite has resources
@@ -291,13 +315,15 @@ defmodule StellarCore.Scheduler.MissionScheduler do
     # Consume resources - now returns {:ok, state} tuples
     with {:ok, _state} <- Satellite.update_energy(satellite_id, -mission.required_energy),
          {:ok, _state} <- Satellite.update_memory(satellite_id, mission.required_memory) do
-      # Simulate mission execution
-      Process.sleep(min(mission.estimated_duration * 100, 10_000))
+      # Simulate realistic mission execution duration
+      duration = get_mission_duration(mission.type)
+      Logger.info("Mission #{mission.id} executing for #{div(duration, 1000)} seconds")
+      Process.sleep(duration)
 
       # Mission completed successfully
       report_completion(mission.id, %{
         executed_at: DateTime.utc_now(),
-        duration_ms: mission.estimated_duration * 100
+        duration_ms: duration
       })
 
       # Release memory (reset to 0 or previous value)
@@ -373,5 +399,10 @@ defmodule StellarCore.Scheduler.MissionScheduler do
       # Will retry - warning alarm
       Alarms.mission_failed(mission.id, mission.name, error, mission.retry_count)
     end
+  end
+
+  defp get_mission_duration(mission_type) do
+    {base_delay, jitter} = Map.get(@mission_durations, mission_type, @mission_durations["default"])
+    base_delay + :rand.uniform(jitter)
   end
 end

@@ -19,6 +19,8 @@ defmodule StellarCore.Commands.CommandQueue do
   - Automatic retry with exponential backoff
   - Command timeout handling
   - Real-time status broadcasting
+  - **One command at a time per satellite**: A satellite must complete its
+    current command before the next one is dispatched
   """
 
   use GenServer
@@ -237,8 +239,10 @@ defmodule StellarCore.Commands.CommandQueue do
 
   @impl true
   def handle_cast({:complete, command_id, result}, state) do
+    Logger.debug("CommandQueue completing command #{command_id}, pending keys: #{inspect(Map.keys(state.pending))}")
     case Map.get(state.pending, command_id) do
       nil ->
+        Logger.warning("CommandQueue: command #{command_id} not found in pending map for completion")
         {:noreply, state}
 
       command ->
@@ -246,6 +250,7 @@ defmodule StellarCore.Commands.CommandQueue do
         updated = %{command | status: :completed}
         broadcast_command_update(updated)
         new_pending = Map.delete(state.pending, command_id)
+        Logger.info("CommandQueue: command #{command_id} completed successfully")
         {:noreply, %{state | pending: new_pending, retries: Map.delete(state.retries, command_id)}}
     end
   end
@@ -354,26 +359,38 @@ defmodule StellarCore.Commands.CommandQueue do
   defp process_queues(state) do
     now = DateTime.utc_now()
 
+    # Get satellites that already have a command in-flight (pending/executing)
+    satellites_busy = 
+      state.pending
+      |> Map.values()
+      |> Enum.map(& &1.satellite_id)
+      |> MapSet.new()
+
     Enum.reduce(state.queues, state, fn {satellite_id, queue}, acc ->
-      case get_next_ready_command(queue, now) do
-        nil ->
-          acc
+      # Skip if this satellite already has a command being processed
+      if MapSet.member?(satellites_busy, satellite_id) do
+        acc
+      else
+        case get_next_ready_command(queue, now) do
+          nil ->
+            acc
 
-        command ->
-          # Send command to satellite
-          send_command_to_satellite(satellite_id, command)
+          command ->
+            # Send command to satellite
+            send_command_to_satellite(satellite_id, command)
 
-          # Move to pending
-          updated_command = %{command | status: :pending, sent_at: now}
-          Commands.update_command_status(command.id, :pending)
-          broadcast_command_update(updated_command)
+            # Move to pending
+            updated_command = %{command | status: :pending, sent_at: now}
+            Commands.update_command_status(command.id, :pending)
+            broadcast_command_update(updated_command)
 
-          # Update state
-          remaining = Enum.reject(queue, &(&1.id == command.id))
-          %{acc |
-            queues: Map.put(acc.queues, satellite_id, remaining),
-            pending: Map.put(acc.pending, command.id, updated_command)
-          }
+            # Update state
+            remaining = Enum.reject(queue, &(&1.id == command.id))
+            %{acc |
+              queues: Map.put(acc.queues, satellite_id, remaining),
+              pending: Map.put(acc.pending, command.id, updated_command)
+            }
+        end
       end
     end)
   end

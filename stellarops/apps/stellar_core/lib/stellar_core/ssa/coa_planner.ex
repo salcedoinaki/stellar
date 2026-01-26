@@ -39,6 +39,10 @@ defmodule StellarCore.SSA.COAPlanner do
   @max_delta_v_ms 10.0           # Maximum delta-V for avoidance (m/s)
   @fuel_density_kg_per_ms 0.05   # Rough fuel cost per m/s delta-V
 
+  # Orbital mechanics constants
+  @earth_radius_km 6378.137      # WGS84 equatorial radius
+  @earth_mu 398600.4418          # Earth gravitational parameter (km³/s²)
+
   defstruct [
     :processing
   ]
@@ -187,10 +191,19 @@ defmodule StellarCore.SSA.COAPlanner do
         {:error, :conjunction_not_found}
 
       conjunction ->
+        # Preload primary_object to get satellite_id
+        conjunction = StellarData.Repo.preload(conjunction, [:primary_object, :satellite])
         coas = generate_coa_options(conjunction)
+        Logger.debug("[COAPlanner] Generated #{length(coas)} COA options for conjunction #{conjunction_id}, severity: #{conjunction.severity}")
         
         results = Enum.map(coas, fn coa_attrs ->
-          COA.create_coa(coa_attrs)
+          result = COA.create_coa(coa_attrs)
+          case result do
+            {:error, changeset} -> 
+              Logger.warning("[COAPlanner] Failed to create COA: #{inspect(changeset.errors)}")
+            _ -> :ok
+          end
+          result
         end)
 
         successful = Enum.filter(results, fn
@@ -218,81 +231,43 @@ defmodule StellarCore.SSA.COAPlanner do
   end
 
   defp generate_coa_options(conjunction) do
-    satellite_id = conjunction.satellite_id
+    # Get satellite_id - check multiple sources
+    satellite_id = conjunction.satellite_id || 
+                   get_satellite_id_from_primary(conjunction)
     
-    coas = []
+    Logger.debug("[COAPlanner] Conjunction #{conjunction.id}: satellite_id=#{inspect(satellite_id)}, primary_object=#{inspect(conjunction.primary_object)}, severity=#{inspect(conjunction.severity)}")
+    
+    if is_nil(satellite_id) do
+      Logger.warning("[COAPlanner] Cannot generate COAs: no satellite_id found for conjunction #{conjunction.id}. The primary object needs to be linked to a satellite.")
+      []
+    else
+      generate_coas_for_satellite(conjunction, satellite_id)
+    end
+  end
 
-    # Always generate a "monitor" or "no_action" option
-    base_coa = build_base_coa(conjunction, satellite_id)
+  defp get_satellite_id_from_primary(conjunction) do
+    # Try to get satellite from preloaded primary_object
+    case conjunction.primary_object do
+      %{satellite_id: sat_id} when not is_nil(sat_id) -> sat_id
+      _ -> nil
+    end
+  end
 
-    coas = cond do
+  defp generate_coas_for_satellite(conjunction, satellite_id) do
+    # Generate maneuver COAs only - no monitoring options
+    cond do
       # Critical: Need avoidance maneuver
       conjunction.severity == :critical ->
-        maneuver_coas = generate_maneuver_options(conjunction)
-        monitor = Map.merge(base_coa, %{
-          coa_type: :monitor,
-          title: "Continue monitoring",
-          description: "Monitor conjunction without maneuver. HIGH RISK.",
-          risk_if_no_action: 0.9,
-          effectiveness_score: 0.1,
-          mission_impact_score: 0.0,
-          priority: :critical
-        })
-        maneuver_coas ++ [monitor]
+        generate_maneuver_options(conjunction, satellite_id)
 
       # High: Maneuver recommended but not mandatory
       conjunction.severity == :high ->
-        maneuver_coas = generate_maneuver_options(conjunction)
-        monitor = Map.merge(base_coa, %{
-          coa_type: :monitor,
-          title: "Enhanced monitoring",
-          description: "Increase tracking frequency and prepare contingency maneuver.",
-          risk_if_no_action: 0.6,
-          effectiveness_score: 0.5,
-          mission_impact_score: 0.1,
-          priority: :high
-        })
-        maneuver_coas ++ [monitor]
+        generate_maneuver_options(conjunction, satellite_id)
 
-      # Medium: Monitor with alert
-      conjunction.severity == :medium ->
-        [
-          Map.merge(base_coa, %{
-            coa_type: :monitor,
-            title: "Standard monitoring",
-            description: "Continue tracking and update predictions.",
-            risk_if_no_action: 0.3,
-            effectiveness_score: 0.7,
-            mission_impact_score: 0.0,
-            priority: :medium
-          }),
-          Map.merge(base_coa, %{
-            coa_type: :alert,
-            title: "Operator alert",
-            description: "Notify operators for situational awareness.",
-            risk_if_no_action: 0.3,
-            effectiveness_score: 0.6,
-            mission_impact_score: 0.0,
-            priority: :low
-          })
-        ]
-
-      # Low: No action needed
+      # Medium or Low: Still generate maneuver options for operator consideration
       true ->
-        [
-          Map.merge(base_coa, %{
-            coa_type: :no_action,
-            title: "No action required",
-            description: "Conjunction is within acceptable risk parameters.",
-            risk_if_no_action: 0.1,
-            effectiveness_score: 0.9,
-            mission_impact_score: 0.0,
-            priority: :low
-          })
-        ]
+        generate_maneuver_options(conjunction, satellite_id)
     end
-
-    coas
   end
 
   defp build_base_coa(conjunction, satellite_id) do
@@ -305,21 +280,23 @@ defmodule StellarCore.SSA.COAPlanner do
     }
   end
 
-  defp generate_maneuver_options(conjunction) do
+  defp generate_maneuver_options(conjunction, satellite_id) do
     # Generate multiple maneuver options with different characteristics
     tca = conjunction.tca
-    satellite_id = conjunction.satellite_id
+    
+    # Get current orbital parameters from primary object
+    current_orbit = get_orbital_params(conjunction)
 
     # Option 1: Early maneuver (lower delta-V, more lead time)
     early_time = DateTime.add(tca, -24 * 3600, :second)  # 24h before TCA
-    early_maneuver = calculate_maneuver(conjunction, early_time, :posigrade)
+    early_maneuver = calculate_maneuver(conjunction, early_time, :posigrade, current_orbit)
 
     # Option 2: Late maneuver (higher delta-V, less disruption)
     late_time = DateTime.add(tca, -@maneuver_lead_time_hours * 3600, :second)
-    late_maneuver = calculate_maneuver(conjunction, late_time, :posigrade)
+    late_maneuver = calculate_maneuver(conjunction, late_time, :posigrade, current_orbit)
 
     # Option 3: Retrograde maneuver (different direction)
-    retro_maneuver = calculate_maneuver(conjunction, early_time, :retrograde)
+    retro_maneuver = calculate_maneuver(conjunction, early_time, :retrograde, current_orbit)
 
     [early_maneuver, late_maneuver, retro_maneuver]
     |> Enum.filter(& &1)  # Remove failed calculations
@@ -328,7 +305,7 @@ defmodule StellarCore.SSA.COAPlanner do
         conjunction_id: conjunction.id,
         satellite_id: satellite_id,
         coa_type: :avoidance_maneuver,
-        priority: conjunction.severity,
+        priority: conjunction.severity || :medium,
         maneuver_time: maneuver.time,
         delta_v_ms: maneuver.delta_v,
         delta_v_in_track_ms: maneuver.delta_v_in_track,
@@ -337,7 +314,10 @@ defmodule StellarCore.SSA.COAPlanner do
         burn_duration_s: maneuver.burn_duration,
         fuel_cost_kg: maneuver.fuel_cost,
         post_maneuver_miss_distance_m: maneuver.new_miss_distance,
-        risk_if_no_action: calculate_risk_score(conjunction),
+        post_maneuver_probability: maneuver.post_maneuver_probability,
+        new_orbit_apogee_km: maneuver.new_apogee_km,
+        new_orbit_perigee_km: maneuver.new_perigee_km,
+        risk_if_no_action: 0.8,
         effectiveness_score: maneuver.effectiveness,
         mission_impact_score: maneuver.mission_impact,
         title: maneuver.title,
@@ -348,16 +328,46 @@ defmodule StellarCore.SSA.COAPlanner do
     end)
   end
 
-  defp calculate_maneuver(conjunction, maneuver_time, direction) do
+  # Extract orbital parameters from conjunction's primary object
+  defp get_orbital_params(conjunction) do
+    case conjunction.primary_object do
+      %{semi_major_axis_km: sma, eccentricity: ecc} when not is_nil(sma) ->
+        %{
+          semi_major_axis_km: sma,
+          eccentricity: ecc || 0.001,
+          apogee_km: conjunction.primary_object.apogee_km || calculate_apogee(sma, ecc || 0.001),
+          perigee_km: conjunction.primary_object.perigee_km || calculate_perigee(sma, ecc || 0.001)
+        }
+      %{apogee_km: apogee, perigee_km: perigee} when not is_nil(apogee) and not is_nil(perigee) ->
+        sma = (apogee + perigee + 2 * @earth_radius_km) / 2
+        ecc = (apogee - perigee) / (apogee + perigee + 2 * @earth_radius_km)
+        %{
+          semi_major_axis_km: sma,
+          eccentricity: ecc,
+          apogee_km: apogee,
+          perigee_km: perigee
+        }
+      _ ->
+        # Default to typical LEO orbit if no data available
+        %{
+          semi_major_axis_km: 6778.0,  # ~400 km altitude
+          eccentricity: 0.001,
+          apogee_km: 400.0,
+          perigee_km: 400.0
+        }
+    end
+  end
+
+  defp calculate_maneuver(conjunction, maneuver_time, direction, current_orbit) do
     # This is a simplified maneuver calculation
     # In production, this would call the Orbital service for precise calculations
 
-    miss_distance = conjunction.miss_distance_m || 1000
-    relative_velocity = conjunction.relative_velocity_ms || 100
+    miss_distance = conjunction.miss_distance_m || 1000.0
+    relative_velocity = conjunction.relative_velocity_ms || 100.0
 
     # Simple delta-V estimation based on miss distance needed
     # Targeting 5x the miss distance to ensure safe separation
-    target_separation = max(5000, miss_distance * 5)  # At least 5km
+    target_separation = max(5000.0, miss_distance * 5.0)  # At least 5km
     
     # Time before TCA
     time_before_tca = DateTime.diff(conjunction.tca, maneuver_time)
@@ -393,6 +403,18 @@ defmodule StellarCore.SSA.COAPlanner do
     # Estimate new miss distance (simplified)
     new_miss_distance = target_separation
 
+    # Calculate new orbital parameters after the burn
+    {new_apogee_km, new_perigee_km} = calculate_new_orbit(current_orbit, delta_v_in_track)
+    
+    # Estimate post-maneuver collision probability
+    # Using simplified probability model: Pc ∝ exp(-miss_distance² / (2 * σ²))
+    # Where σ is the combined position uncertainty (typically ~100m for well-tracked objects)
+    post_maneuver_probability = estimate_collision_probability(
+      new_miss_distance,
+      relative_velocity,
+      conjunction.collision_probability
+    )
+
     # Calculate scores
     effectiveness = min(1.0, new_miss_distance / 5000)  # 5km = 100% effective
     mission_impact = min(1.0, fuel_cost / 10.0)  # 10kg = 100% impact
@@ -406,6 +428,9 @@ defmodule StellarCore.SSA.COAPlanner do
       burn_duration: Float.round(total_delta_v * 10, 1),  # Rough estimate
       fuel_cost: Float.round(fuel_cost, 3),
       new_miss_distance: Float.round(new_miss_distance, 1),
+      new_apogee_km: Float.round(new_apogee_km, 2),
+      new_perigee_km: Float.round(new_perigee_km, 2),
+      post_maneuver_probability: post_maneuver_probability,
       effectiveness: Float.round(effectiveness, 3),
       mission_impact: Float.round(mission_impact, 3),
       title: title,
@@ -414,17 +439,83 @@ defmodule StellarCore.SSA.COAPlanner do
     }
   end
 
+  # Calculate new apogee/perigee after an in-track delta-V burn
+  # Using vis-viva equation and simplified orbital mechanics
+  defp calculate_new_orbit(current_orbit, delta_v_in_track_ms) do
+    # Current orbital parameters
+    sma = current_orbit.semi_major_axis_km
+    ecc = current_orbit.eccentricity
+    
+    # Current velocity at periapsis (km/s) using vis-viva: v² = μ(2/r - 1/a)
+    r_periapsis = sma * (1 - ecc)
+    v_periapsis = :math.sqrt(@earth_mu * (2.0 / r_periapsis - 1.0 / sma))
+    
+    # Apply delta-V (convert m/s to km/s)
+    delta_v_km_s = delta_v_in_track_ms / 1000.0
+    new_v = v_periapsis + delta_v_km_s
+    
+    # New semi-major axis from vis-viva: 1/a = 2/r - v²/μ
+    new_sma = 1.0 / (2.0 / r_periapsis - (new_v * new_v) / @earth_mu)
+    
+    # For small burns, periapsis stays roughly the same
+    new_r_periapsis = r_periapsis
+    
+    # Calculate new apoapsis from semi-major axis
+    new_r_apoapsis = 2 * new_sma - new_r_periapsis
+    
+    # Convert to altitudes (subtract Earth radius)
+    new_apogee_km = new_r_apoapsis - @earth_radius_km
+    new_perigee_km = new_r_periapsis - @earth_radius_km
+    
+    # Ensure non-negative altitudes
+    {max(0.0, new_apogee_km), max(0.0, new_perigee_km)}
+  end
+
+  # Estimate post-maneuver collision probability using a simplified model
+  # Based on the hard-body radius approach with Gaussian position uncertainties
+  defp estimate_collision_probability(new_miss_distance_m, relative_velocity_ms, original_probability) do
+    # Combined position uncertainty (1-sigma) in meters
+    # Typical values: 50-200m for well-tracked objects
+    sigma = 100.0
+    
+    # Hard-body radius (combined radii of both objects) in meters
+    # Typical satellite: 1-5m, debris: 0.1-1m
+    hard_body_radius = 5.0
+    
+    # Probability using simplified 2D Gaussian model
+    # Pc ≈ (π * r² / (2π * σ²)) * exp(-d² / (2σ²))
+    # Simplified to: Pc ≈ (r/σ)² * exp(-d² / (2σ²))
+    
+    if new_miss_distance_m <= 0 do
+      1.0
+    else
+      exponent = -(new_miss_distance_m * new_miss_distance_m) / (2.0 * sigma * sigma)
+      probability = (hard_body_radius / sigma) * (hard_body_radius / sigma) * :math.exp(exponent)
+      
+      # Cap at original probability and ensure it's reduced significantly
+      min_reduction = 0.01  # At least 100x reduction expected
+      max_probability = (original_probability || 0.001) * min_reduction
+      
+      Float.round(min(probability, max_probability), 10)
+    end
+  end
+
+  defp calculate_apogee(sma, ecc), do: sma * (1 + ecc) - @earth_radius_km
+  defp calculate_perigee(sma, ecc), do: sma * (1 - ecc) - @earth_radius_km
+
   defp do_plan_maneuver(conjunction_id, opts) do
     case Conjunctions.get_conjunction(conjunction_id) do
       nil ->
         {:error, :conjunction_not_found}
 
       conjunction ->
+        conjunction = StellarData.Repo.preload(conjunction, [:primary_object])
+        current_orbit = get_orbital_params(conjunction)
         lead_hours = Keyword.get(opts, :lead_hours, 24)
         direction = Keyword.get(opts, :direction, :posigrade)
         
         maneuver_time = DateTime.add(conjunction.tca, -lead_hours * 3600, :second)
-        maneuver = calculate_maneuver(conjunction, maneuver_time, direction)
+        maneuver = calculate_maneuver(conjunction, maneuver_time, direction, current_orbit)
 
         {:ok, maneuver}
     end

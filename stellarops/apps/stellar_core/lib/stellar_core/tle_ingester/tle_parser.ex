@@ -179,10 +179,26 @@ defmodule StellarCore.TLEIngester.TLEParser do
   end
   
   defp parse_float(str) do
-    str |> String.trim() |> String.to_float()
+    trimmed = String.trim(str)
+    # Handle TLE format quirks:
+    # - Values like ".00012778" need a leading zero
+    # - Values like "-.00012778" need "0" inserted after the minus
+    normalized = 
+      cond do
+        String.starts_with?(trimmed, ".") -> "0" <> trimmed
+        String.starts_with?(trimmed, "-.") -> "-0" <> String.slice(trimmed, 1..-1//1)
+        true -> trimmed
+      end
+    
+    String.to_float(normalized)
   rescue
     _ ->
-      str |> String.trim() |> String.to_integer() |> Kernel./(1.0)
+      # Try parsing as integer and convert to float
+      try do
+        str |> String.trim() |> String.to_integer() |> Kernel./(1.0)
+      rescue
+        _ -> 0.0
+      end
   end
   
   defp parse_int(str) do
@@ -273,7 +289,7 @@ defmodule StellarCore.TLEIngester.TLEParser do
     
     %{
       name: String.trim(name),
-      norad_id: to_string(parsed_line1.norad_id),
+      norad_id: parsed_line1.norad_id,
       line1: line1,
       line2: line2,
       epoch: epoch,

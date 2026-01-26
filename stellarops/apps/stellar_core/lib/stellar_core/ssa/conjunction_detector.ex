@@ -49,10 +49,18 @@ defmodule StellarCore.SSA.ConjunctionDetector do
   end
 
   @doc """
-  Triggers an immediate screening run.
+  Triggers an immediate screening run (async).
   """
   def run_screening do
     GenServer.cast(__MODULE__, :run_screening)
+  end
+
+  @doc """
+  Triggers an immediate screening run and waits for results (sync).
+  Returns {:ok, results} or {:error, reason}.
+  """
+  def detect_now(timeout \\ 60_000) do
+    GenServer.call(__MODULE__, :detect_now, timeout)
   end
 
   @doc """
@@ -142,6 +150,30 @@ defmodule StellarCore.SSA.ConjunctionDetector do
   end
 
   @impl true
+  def handle_call(:detect_now, _from, %{screening_in_progress: true} = state) do
+    {:reply, {:error, :screening_in_progress}, state}
+  end
+
+  @impl true
+  def handle_call(:detect_now, _from, state) do
+    # Run screening synchronously
+    conjunctions_found = do_full_screening(state)
+    
+    new_state = %{state |
+      last_screening_at: DateTime.utc_now(),
+      conjunctions_found: conjunctions_found
+    }
+
+    result = {:ok, %{
+      new_count: conjunctions_found,
+      updated_count: 0,
+      timestamp: DateTime.utc_now()
+    }}
+
+    {:reply, result, new_state}
+  end
+
+  @impl true
   def handle_cast(:run_screening, %{screening_in_progress: true} = state) do
     Logger.warn("[ConjunctionDetector] Screening already in progress, skipping")
     {:noreply, state}
@@ -168,7 +200,7 @@ defmodule StellarCore.SSA.ConjunctionDetector do
 
   @impl true
   def handle_info({:screening_complete, conjunctions_found}, state) do
-    Logger.info("[ConjunctionDetector] Screening complete, found #{conjunctions_found} conjunction(s)")
+    Logger.debug("[ConjunctionDetector] Screening cycle finished, detected #{conjunctions_found} close approach(es)")
     
     new_state = %{state |
       screening_in_progress: false,
@@ -257,7 +289,7 @@ defmodule StellarCore.SSA.ConjunctionDetector do
     end)
 
     elapsed = System.monotonic_time(:millisecond) - start_time
-    Logger.info("[ConjunctionDetector] Screening complete in #{elapsed}ms, found #{length(conjunctions)} conjunctions")
+    Logger.info("[ConjunctionDetector] Screening complete in #{elapsed}ms, detected #{length(conjunctions)} close approach(es)")
 
     length(conjunctions)
   end

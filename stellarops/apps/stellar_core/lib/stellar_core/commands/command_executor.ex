@@ -36,9 +36,21 @@ defmodule StellarCore.Commands.CommandExecutor do
 
   @pubsub StellarWeb.PubSub
 
-  # Simulated transmission delay in ms (50-200ms for realism)
-  @base_transmission_delay_ms 50
-  @transmission_jitter_ms 150
+  # Simulated transmission delay in ms (represents ground-to-satellite signal travel)
+  @base_transmission_delay_ms 500
+  @transmission_jitter_ms 500
+
+  # Simulated execution delays by command type (in ms)
+  # These simulate realistic onboard processing times
+  @execution_delays %{
+    "collect_telemetry" => {60_000, 5_000},    # 60-65 seconds for telemetry gathering
+    "set_mode" => {1_000, 2_000},              # 1-3 seconds for mode change
+    "system_diagnostic" => {30_000, 5_000},   # 30-35 seconds for diagnostics
+    "update_energy" => {500, 1_000},           # 0.5-1.5 seconds
+    "download_data" => {2_000, 4_000},         # 2-6 seconds base (plus size-based delay)
+    "reboot" => {60_000, 5_000},               # 60-65 seconds for reboot
+    "default" => {1_000, 2_000}                # 1-3 seconds for unknown commands
+  }
 
   # ============================================================================
   # Client API
@@ -202,8 +214,9 @@ defmodule StellarCore.Commands.CommandExecutor do
 
     # Step 5: Report result
     case result do
-      {:ok, _} ->
-        CommandQueue.complete_command(command.id, result)
+      {:ok, data} ->
+        # Extract the map from the tuple - result field expects a map, not a tuple
+        CommandQueue.complete_command(command.id, data)
         report_result(:success)
 
       {:error, reason} ->
@@ -216,6 +229,9 @@ defmodule StellarCore.Commands.CommandExecutor do
     satellite_id = command.satellite_id
     command_type = command.command_type
     payload = command.payload || %{}
+
+    # Simulate realistic execution delay before processing
+    simulate_execution_delay(command_type)
 
     # Check if satellite is alive
     unless Satellite.alive?(satellite_id) do
@@ -230,7 +246,16 @@ defmodule StellarCore.Commands.CommandExecutor do
 
     if mode do
       mode_atom = if is_atom(mode), do: mode, else: String.to_existing_atom(mode)
-      Satellite.set_mode(satellite_id, mode_atom)
+      case Satellite.set_mode(satellite_id, mode_atom) do
+        {:ok, state} ->
+          {:ok, %{
+            mode: state.mode,
+            previous_mode: mode_atom,
+            set_at: DateTime.utc_now()
+          }}
+        error ->
+          error
+      end
     else
       {:error, :missing_mode_parameter}
     end
@@ -242,11 +267,13 @@ defmodule StellarCore.Commands.CommandExecutor do
     # Simulate telemetry collection - just return current state
     case Satellite.get_state(satellite_id) do
       {:ok, state} ->
+        # Convert position tuple to map for JSON encoding
+        {x, y, z} = state.position || {0.0, 0.0, 0.0}
         {:ok, %{
           mode: state.mode,
           energy: state.energy,
           memory_used: state.memory_used,
-          position: state.position,
+          position: %{x: x, y: y, z: z},
           collected_at: DateTime.utc_now()
         }}
 
@@ -257,7 +284,16 @@ defmodule StellarCore.Commands.CommandExecutor do
 
   defp execute_command_type(satellite_id, "update_energy", payload) do
     delta = payload["delta"] || payload[:delta] || 0
-    Satellite.update_energy(satellite_id, delta)
+    case Satellite.update_energy(satellite_id, delta) do
+      {:ok, state} ->
+        {:ok, %{
+          energy: state.energy,
+          delta: delta,
+          updated_at: DateTime.utc_now()
+        }}
+      error ->
+        error
+    end
   end
 
   defp execute_command_type(satellite_id, "system_diagnostic", _payload) do
@@ -322,6 +358,13 @@ defmodule StellarCore.Commands.CommandExecutor do
     # Unknown command type - just succeed for demo purposes
     Logger.warning("Unknown command type: #{command_type}, simulating success")
     {:ok, %{command_type: command_type, status: :simulated, timestamp: DateTime.utc_now()}}
+  end
+
+  defp simulate_execution_delay(command_type) do
+    {base_delay, jitter} = Map.get(@execution_delays, command_type, @execution_delays["default"])
+    delay = base_delay + :rand.uniform(jitter)
+    Logger.debug("Simulating #{command_type} execution delay: #{delay}ms")
+    Process.sleep(delay)
   end
 
   defp report_result(result) do

@@ -15,6 +15,10 @@ defmodule StellarCore.Missions.Executor do
   - orbit_adjust: Perform orbital maneuvers
   - downlink: Transfer data to ground station
   - maintenance: System maintenance tasks
+
+  ## Mission Durations
+  Missions simulate realistic satellite operations with configurable durations.
+  In production, these would be hours to days; for demos, they're scaled to minutes.
   """
 
   use GenServer
@@ -28,7 +32,20 @@ defmodule StellarCore.Missions.Executor do
   alias Phoenix.PubSub
 
   @pubsub StellarWeb.PubSub
-  @execution_timeout 300_000  # 5 minutes default
+  @execution_timeout 600_000  # 10 minutes default (increased for longer missions)
+
+  # Simulated mission execution durations by type (in ms)
+  # Real missions take hours to days; these are scaled for demos
+  @mission_durations %{
+    "imaging" => {120_000, 60_000},          # 2-3 minutes (real: hours for orbit pass + capture)
+    "data_collection" => {180_000, 60_000},  # 3-4 minutes (real: hours/days of data gathering)
+    "orbit_adjust" => {90_000, 30_000},      # 1.5-2 minutes (real: hours for maneuver + verification)
+    "downlink" => {60_000, 30_000},          # 1-1.5 minutes (real: depends on contact window)
+    "maintenance" => {150_000, 60_000},      # 2.5-3.5 minutes (real: hours for full diagnostics)
+    "maneuver" => {120_000, 60_000},         # 2-3 minutes (COA maneuver execution)
+    "communication" => {60_000, 30_000},     # 1-1.5 minutes (relay operations)
+    "default" => {60_000, 30_000}            # 1-1.5 minutes for unknown types
+  }
 
   # Client API
 
@@ -291,8 +308,8 @@ defmodule StellarCore.Missions.Executor do
 
     Logger.info("[MissionExecutor] Imaging target at #{target_lat}, #{target_lon}")
 
-    # Simulate capture time
-    Process.sleep(mission.estimated_duration * 100)  # Scaled down for demo
+    # Simulate realistic mission duration
+    simulate_mission_duration("imaging")
 
     {:ok, %{
       images_captured: :rand.uniform(10) + 1,
@@ -306,7 +323,8 @@ defmodule StellarCore.Missions.Executor do
   defp run_data_collection_mission(mission) do
     Logger.info("[MissionExecutor] Collecting data for #{mission.satellite_id}")
 
-    Process.sleep(mission.estimated_duration * 100)
+    # Simulate realistic mission duration
+    simulate_mission_duration("data_collection")
 
     {:ok, %{
       samples_collected: :rand.uniform(1000) + 100,
@@ -320,8 +338,8 @@ defmodule StellarCore.Missions.Executor do
 
     Logger.info("[MissionExecutor] Orbit adjustment: delta-v #{delta_v} m/s")
 
-    # Orbit adjustments use more energy
-    Process.sleep(mission.estimated_duration * 100)
+    # Simulate realistic mission duration
+    simulate_mission_duration("orbit_adjust")
 
     {:ok, %{
       delta_v_applied: delta_v,
@@ -335,8 +353,8 @@ defmodule StellarCore.Missions.Executor do
 
     Logger.info("[MissionExecutor] Downlinking #{data_size} MB")
 
-    # Downlink depends on contact window
-    Process.sleep(mission.estimated_duration * 100)
+    # Simulate realistic mission duration
+    simulate_mission_duration("downlink")
 
     {:ok, %{
       data_transferred_mb: data_size,
@@ -350,7 +368,8 @@ defmodule StellarCore.Missions.Executor do
 
     Logger.info("[MissionExecutor] Running #{maintenance_type} maintenance")
 
-    Process.sleep(mission.estimated_duration * 100)
+    # Simulate realistic mission duration
+    simulate_mission_duration("maintenance")
 
     {:ok, %{
       maintenance_type: maintenance_type,
@@ -438,5 +457,12 @@ defmodule StellarCore.Missions.Executor do
   defp broadcast_mission_event(event, mission_id, payload) do
     PubSub.broadcast(@pubsub, "missions:all", {event, mission_id, payload})
     PubSub.broadcast(@pubsub, "mission:#{mission_id}", {event, payload})
+  end
+
+  defp simulate_mission_duration(mission_type) do
+    {base_delay, jitter} = Map.get(@mission_durations, mission_type, @mission_durations["default"])
+    delay = base_delay + :rand.uniform(jitter)
+    Logger.info("[MissionExecutor] Mission duration: #{div(delay, 1000)} seconds")
+    Process.sleep(delay)
   end
 end

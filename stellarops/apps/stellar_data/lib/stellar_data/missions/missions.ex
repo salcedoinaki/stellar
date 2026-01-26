@@ -38,6 +38,31 @@ defmodule StellarData.Missions do
   end
 
   @doc """
+  Gets a mission by name.
+  """
+  def get_mission_by_name(name) when is_binary(name) do
+    Repo.one(from m in Mission, where: m.name == ^name, limit: 1)
+  end
+
+  @doc """
+  Gets a mission by ID or name.
+  First tries to parse as UUID, then falls back to name lookup.
+  """
+  def get_mission_by_id_or_name(identifier) when is_binary(identifier) do
+    case Ecto.UUID.cast(identifier) do
+      {:ok, uuid} ->
+        # Valid UUID format, try to find by ID
+        case get_mission(uuid) do
+          nil -> get_mission_by_name(identifier)  # Fallback to name
+          mission -> mission
+        end
+      :error ->
+        # Not a valid UUID, search by name
+        get_mission_by_name(identifier)
+    end
+  end
+
+  @doc """
   Updates a mission.
   """
   def update_mission(%Mission{} = mission, attrs) do
@@ -86,6 +111,32 @@ defmodule StellarData.Missions do
       asc: m.inserted_at
     ])
     |> Repo.all()
+  end
+
+  @doc """
+  Counts running missions for a specific satellite.
+  Used to enforce one-mission-at-a-time constraint.
+  """
+  def count_running_for_satellite(satellite_id) do
+    Mission
+    |> where([m], m.satellite_id == ^satellite_id)
+    |> where([m], m.status in [:scheduled, :running])
+    |> Repo.aggregate(:count, :id)
+  end
+
+  @doc """
+  Force-fails all orphaned running missions.
+  Used to clean up missions stuck in running state after a restart.
+  """
+  def cleanup_orphaned_missions do
+    now = DateTime.utc_now()
+
+    {count, _} =
+      Mission
+      |> where([m], m.status in [:scheduled, :running])
+      |> Repo.update_all(set: [status: :failed, completed_at: now, last_error: "Orphaned - cleaned up on restart"])
+
+    {:ok, count}
   end
 
   @doc """
@@ -162,6 +213,12 @@ defmodule StellarData.Missions do
     |> Repo.update()
   end
 
+  # Handle missions already in terminal state (e.g., cleaned up as orphaned)
+  def complete_mission(%Mission{status: status} = mission, _result)
+      when status in [:completed, :failed, :canceled] do
+    {:ok, mission}
+  end
+
   def complete_mission(id, result) when is_binary(id) do
     case get_mission(id) do
       nil -> {:error, :not_found}
@@ -176,6 +233,12 @@ defmodule StellarData.Missions do
     mission
     |> Mission.fail_changeset(error)
     |> Repo.update()
+  end
+
+  # Handle missions already in terminal state (e.g., cleaned up as orphaned)
+  def fail_mission(%Mission{status: status} = mission, _error)
+      when status in [:completed, :failed, :canceled] do
+    {:ok, mission}
   end
 
   def fail_mission(id, error) when is_binary(id) do

@@ -17,9 +17,13 @@ defmodule StellarCore.CLI do
 
   require Logger
 
-  alias StellarCore.{Satellite, Alarms, ConjunctionDetector, COAPlanner}
+  alias StellarCore.{Satellite, Alarms, TLEIngester}
+  alias StellarCore.SSA.ConjunctionDetector
+  alias StellarCore.SSA.COAPlanner
+  alias StellarCore.TLEIngester.CelesTrakClient
   alias StellarCore.Commands.CommandQueue
   alias StellarData.{Satellites, Commands, Missions, GroundStations, SpaceObjects, Conjunctions, COAs}
+  alias StellarData.COA, as: COAContext
 
   # ============================================================================
   # SATELLITE COMMANDS
@@ -437,18 +441,21 @@ defmodule StellarCore.CLI do
   @doc """
   Cancels a mission.
 
-  ## Example
-      iex> StellarCore.CLI.cancel_mission("mission-uuid")
+  Accepts either a mission UUID or mission name.
+
+  ## Examples
+      iex> StellarCore.CLI.cancel_mission("62947aed-fea2-44c4-9cd8-1d55b5196fe2")
+      iex> StellarCore.CLI.cancel_mission("Test Y")
   """
-  def cancel_mission(mission_id) do
-    case Missions.get_mission(mission_id) do
+  def cancel_mission(identifier) do
+    case Missions.get_mission_by_id_or_name(identifier) do
       nil ->
-        IO.puts("\n  ✗ Mission '#{mission_id}' not found.\n")
+        IO.puts("\n  ✗ Mission '#{identifier}' not found.\n")
         {:error, :not_found}
       mission ->
-        case Missions.update_mission(mission, %{status: :cancelled}) do
+        case Missions.update_mission(mission, %{status: :canceled}) do
           {:ok, m} ->
-            IO.puts("\n  ✓ Mission '#{mission_id}' cancelled.\n")
+            IO.puts("\n  ✓ Mission '#{mission.name}' (#{mission.id}) canceled.\n")
             {:ok, m}
           {:error, reason} ->
             IO.puts("\n  ✗ Failed to cancel mission: #{inspect(reason)}\n")
@@ -571,13 +578,15 @@ defmodule StellarCore.CLI do
     else
       Enum.each(displayed, fn obj ->
         threat_icon = case obj.threat_level do
-          "high" -> "⚠️"
-          "medium" -> "⚡"
-          "low" -> "○"
+          :critical -> "🔴"
+          :high -> "⚠️"
+          :medium -> "⚡"
+          :low -> "○"
+          :none -> "✓"
           _ -> "?"
         end
         IO.puts("  [#{threat_icon}] #{obj.norad_id || obj.id} - #{obj.name || "Unknown"}")
-        IO.puts("      Type: #{obj.object_type}, Regime: #{obj.orbital_regime || "N/A"}")
+        IO.puts("      Type: #{obj.object_type}, Regime: #{obj.orbit_type || "N/A"}")
         IO.puts("      Threat: #{obj.threat_level || "unknown"}")
         IO.puts("")
       end)
@@ -602,7 +611,7 @@ defmodule StellarCore.CLI do
         IO.puts("  NORAD ID:     #{obj.norad_id}")
         IO.puts("  Name:         #{obj.name}")
         IO.puts("  Type:         #{obj.object_type}")
-        IO.puts("  Regime:       #{obj.orbital_regime || "N/A"}")
+        IO.puts("  Regime:       #{obj.orbit_type || "N/A"}")
         IO.puts("  Threat Level: #{obj.threat_level || "unknown"}")
         IO.puts("  TLE Epoch:    #{obj.tle_epoch || "N/A"}")
         IO.puts("")
@@ -636,7 +645,7 @@ defmodule StellarCore.CLI do
         IO.puts("  [#{severity_icon}] #{c.id}")
         IO.puts("      Primary: #{c.primary_object_id}, Secondary: #{c.secondary_object_id}")
         IO.puts("      TCA: #{c.tca}")
-        IO.puts("      Miss Distance: #{c.miss_distance_km} km")
+        IO.puts("      Miss Distance: #{format_distance_km(c.miss_distance_m)} km")
         IO.puts("      Collision Prob: #{format_probability(c.collision_probability)}")
         IO.puts("      Status: #{c.status}")
         IO.puts("")
@@ -649,6 +658,10 @@ defmodule StellarCore.CLI do
   defp format_probability(nil), do: "N/A"
   defp format_probability(prob) when is_float(prob), do: "#{Float.round(prob * 100, 4)}%"
   defp format_probability(prob), do: inspect(prob)
+
+  defp format_distance_km(nil), do: "N/A"
+  defp format_distance_km(meters) when is_number(meters), do: Float.round(meters / 1000.0, 3)
+  defp format_distance_km(value), do: inspect(value)
 
   @doc """
   Triggers an immediate conjunction screening cycle.
@@ -672,6 +685,222 @@ defmodule StellarCore.CLI do
     end
   end
 
+  # ============================================================================
+  # TLE INGESTION COMMANDS
+  # ============================================================================
+
+  @doc """
+  Fetches TLE data from CelesTrak and updates space objects.
+
+  ## Categories
+    :stations    - Space stations (ISS, Tiangong, etc.)
+    :active      - All active satellites
+    :weather     - Weather satellites
+    :noaa        - NOAA satellites
+    :goes        - GOES satellites
+    :debris      - Tracked debris
+
+  ## Examples
+      iex> StellarCore.CLI.fetch_tles()
+      iex> StellarCore.CLI.fetch_tles(:stations)
+      iex> StellarCore.CLI.fetch_tles(:active)
+  """
+  def fetch_tles(category \\ :stations) do
+    IO.puts("\n  ▶ Fetching TLEs from CelesTrak (#{category})...")
+    
+    # Ensure HTTP client is started
+    :inets.start()
+    :ssl.start()
+    
+    # Call CelesTrak directly without GenServer
+    with {:ok, tle_text} <- CelesTrakClient.fetch(category),
+         {:ok, tles} <- StellarCore.TLEIngester.TLEParser.parse_multi(tle_text) do
+      
+      # Update each space object
+      count = Enum.reduce(tles, 0, fn tle, acc ->
+        case SpaceObjects.get_object_by_norad_id(tle.norad_id) do
+          nil -> acc  # Object not in our DB, skip
+          obj ->
+            attrs = %{
+              tle_line1: tle.line1,
+              tle_line2: tle.line2,
+              tle_epoch: tle.epoch,
+              tle_updated_at: DateTime.utc_now(),
+              inclination_deg: tle.inclination,
+              eccentricity: tle.eccentricity,
+              raan_deg: tle.raan,
+              arg_perigee_deg: tle.arg_perigee,
+              mean_anomaly_deg: tle.mean_anomaly,
+              mean_motion: tle.mean_motion,
+              bstar_drag: tle.bstar
+            }
+            case SpaceObjects.update_object(obj, attrs) do
+              {:ok, _} -> acc + 1
+              {:error, _} -> acc
+            end
+        end
+      end)
+      
+      IO.puts("  ✓ Successfully updated #{count} space objects with TLE data.")
+      IO.puts("    (#{length(tles)} TLEs fetched, #{count} matched objects in DB)")
+      IO.puts("")
+      {:ok, count}
+    else
+      {:error, reason} ->
+        IO.puts("  ✗ Failed to fetch TLEs: #{inspect(reason)}")
+        IO.puts("")
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Fetches TLE for a specific space object by NORAD ID and updates it.
+
+  ## Example
+      iex> StellarCore.CLI.refresh_tle(25544)  # ISS
+  """
+  def refresh_tle(norad_id) when is_integer(norad_id) do
+    IO.puts("\n  ▶ Fetching TLE for NORAD ID #{norad_id}...")
+    
+    # Ensure HTTP client is started
+    :inets.start()
+    :ssl.start()
+    
+    case CelesTrakClient.fetch_by_norad_id(norad_id) do
+      {:ok, tle_text} ->
+        case StellarCore.TLEIngester.TLEParser.parse_multi(tle_text) do
+          {:ok, [tle | _]} ->
+            # Update the space object with the TLE data
+            case SpaceObjects.get_object_by_norad_id(norad_id) do
+              nil ->
+                IO.puts("  ✗ Space object with NORAD ID #{norad_id} not found in database.")
+                IO.puts("")
+                {:error, :not_found}
+              obj ->
+                attrs = %{
+                  tle_line1: tle.line1,
+                  tle_line2: tle.line2,
+                  tle_epoch: tle.epoch,
+                  tle_updated_at: DateTime.utc_now(),
+                  inclination_deg: tle.inclination,
+                  eccentricity: tle.eccentricity,
+                  raan_deg: tle.raan,
+                  arg_perigee_deg: tle.arg_perigee,
+                  mean_anomaly_deg: tle.mean_anomaly,
+                  mean_motion: tle.mean_motion,
+                  bstar_drag: tle.bstar
+                }
+                case SpaceObjects.update_object(obj, attrs) do
+                  {:ok, updated} ->
+                    IO.puts("  ✓ Updated TLE for #{updated.name || norad_id}")
+                    IO.puts("    Epoch: #{tle.epoch}")
+                    IO.puts("    Inclination: #{Float.round(tle.inclination, 4)}°")
+                    IO.puts("    Eccentricity: #{tle.eccentricity}")
+                    IO.puts("    Mean Motion: #{Float.round(tle.mean_motion, 8)} rev/day")
+                    IO.puts("")
+                    {:ok, updated}
+                  {:error, changeset} ->
+                    IO.puts("  ✗ Failed to update: #{inspect(changeset.errors)}")
+                    IO.puts("")
+                    {:error, changeset}
+                end
+            end
+          {:ok, []} ->
+            IO.puts("  ✗ No TLE data returned for NORAD ID #{norad_id}")
+            IO.puts("")
+            {:error, :no_data}
+          {:error, reason} ->
+            IO.puts("  ✗ Failed to parse TLE: #{inspect(reason)}")
+            IO.puts("")
+            {:error, reason}
+        end
+      {:error, reason} ->
+        IO.puts("  ✗ Failed to fetch TLE: #{inspect(reason)}")
+        IO.puts("")
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Shows TLE freshness statistics for all space objects.
+
+  ## Example
+      iex> StellarCore.CLI.tle_status()
+  """
+  def tle_status do
+    objects = SpaceObjects.list_space_objects([])
+    
+    total = length(objects)
+    with_tle = Enum.count(objects, & &1.tle_line1)
+    without_tle = total - with_tle
+    
+    stale_threshold = DateTime.add(DateTime.utc_now(), -7, :day)
+    stale = Enum.count(objects, fn obj ->
+      obj.tle_updated_at && DateTime.compare(obj.tle_updated_at, stale_threshold) == :lt
+    end)
+    
+    fresh = with_tle - stale
+    
+    IO.puts("\n=== TLE STATUS ===\n")
+    IO.puts("  Total space objects: #{total}")
+    IO.puts("  With TLE data:       #{with_tle} (#{percentage(with_tle, total)})")
+    IO.puts("  Without TLE data:    #{without_tle} (#{percentage(without_tle, total)})")
+    IO.puts("  Fresh (< 7 days):    #{fresh}")
+    IO.puts("  Stale (> 7 days):    #{stale}")
+    IO.puts("")
+    
+    :ok
+  end
+
+  defp percentage(_, 0), do: "N/A"
+  defp percentage(count, total), do: "#{Float.round(count / total * 100, 1)}%"
+
+  @doc """
+  Debug: Test raw TLE fetch from CelesTrak.
+  Shows the raw response to diagnose parsing issues.
+
+  ## Example
+      iex> StellarCore.CLI.debug_tle_fetch(:stations)
+  """
+  def debug_tle_fetch(category \\ :stations) do
+    IO.puts("\n=== DEBUG TLE FETCH ===\n")
+    IO.puts("  Category: #{category}")
+    
+    # Ensure HTTP client is started
+    :inets.start()
+    :ssl.start()
+    
+    case CelesTrakClient.fetch(category) do
+      {:ok, body} ->
+        IO.puts("  Response size: #{byte_size(body)} bytes")
+        IO.puts("  Response type: #{if is_binary(body), do: "binary", else: "list"}")
+        
+        # Show first few lines
+        lines = body |> String.split(~r/\r?\n/) |> Enum.take(9)
+        IO.puts("  First #{length(lines)} lines:")
+        IO.puts("")
+        Enum.each(lines, fn line -> IO.puts("    #{line}") end)
+        IO.puts("")
+        
+        # Try parsing
+        case StellarCore.TLEIngester.TLEParser.parse_multi(body) do
+          {:ok, tles} ->
+            IO.puts("  Parsed #{length(tles)} TLEs")
+            if length(tles) > 0 do
+              tle = hd(tles)
+              IO.puts("  First TLE: #{tle.name} (NORAD #{tle.norad_id})")
+            end
+          {:error, reason} ->
+            IO.puts("  Parse error: #{inspect(reason)}")
+        end
+        
+        {:ok, body}
+        
+      {:error, reason} ->
+        IO.puts("  Fetch error: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
   @doc """
   Shows details of a specific conjunction.
 
@@ -688,7 +917,7 @@ defmodule StellarCore.CLI do
         IO.puts("  Primary Object:   #{c.primary_object_id}")
         IO.puts("  Secondary Object: #{c.secondary_object_id}")
         IO.puts("  TCA:              #{c.tca}")
-        IO.puts("  Miss Distance:    #{c.miss_distance_km} km")
+        IO.puts("  Miss Distance:    #{format_distance_km(c.miss_distance_m)} km")
         IO.puts("  Collision Prob:   #{format_probability(c.collision_probability)}")
         IO.puts("  Relative Velocity: #{c.relative_velocity_km_s || "N/A"} km/s")
         IO.puts("  Severity:         #{c.severity}")
@@ -710,7 +939,7 @@ defmodule StellarCore.CLI do
       iex> StellarCore.CLI.coas(status: :pending)
   """
   def coas(opts \\ []) do
-    coa_list = COAs.list_coas(opts)
+    coa_list = COAContext.list_coas(opts)
     
     IO.puts("\n=== COURSES OF ACTION (#{length(coa_list)}) ===\n")
     
@@ -721,16 +950,18 @@ defmodule StellarCore.CLI do
         status_icon = case coa.status do
           :approved -> "✓"
           :rejected -> "✗"
-          :pending -> "◌"
+          :proposed -> "◌"
           :selected -> "★"
+          :executing -> "▶"
+          :completed -> "✓"
           _ -> "?"
         end
+        delta_v = coa.delta_v_ms || 0.0
+        fuel = coa.fuel_cost_kg || 0.0
         IO.puts("  [#{status_icon}] #{coa.id}")
-        IO.puts("      Type: #{coa.coa_type}")
+        IO.puts("      Type: #{coa.coa_type}, Title: #{coa.title}")
         IO.puts("      Conjunction: #{coa.conjunction_id}")
-        IO.puts("      Delta-V: #{Float.round(coa.delta_v_m_s || 0, 3)} m/s")
-        IO.puts("      Fuel: #{Float.round(coa.fuel_required_kg || 0, 2)} kg")
-        IO.puts("      Risk Score: #{coa.risk_score || "N/A"}")
+        IO.puts("      Delta-V: #{Float.round(delta_v, 3)} m/s, Fuel: #{Float.round(fuel, 2)} kg")
         IO.puts("      Status: #{coa.status}")
         IO.puts("")
       end)
@@ -748,11 +979,13 @@ defmodule StellarCore.CLI do
   def generate_coas(conjunction_id) do
     IO.puts("\n  ▶ Generating COAs for conjunction #{conjunction_id}...")
     
-    case COAs.generate_coas(conjunction_id) do
+    case COAPlanner.generate_coas(conjunction_id) do
       {:ok, coa_list} ->
         IO.puts("  ✓ Generated #{length(coa_list)} COAs.")
         Enum.each(coa_list, fn coa ->
-          IO.puts("    - #{coa.coa_type}: ΔV=#{Float.round(coa.delta_v_m_s || 0, 3)} m/s, Risk=#{coa.risk_score}")
+          delta_v = coa.delta_v_ms || 0.0
+          risk = coa.risk_if_no_action || 0.0
+          IO.puts("    - #{coa.coa_type}: ΔV=#{Float.round(delta_v, 3)} m/s, Risk=#{Float.round(risk * 100, 1)}%")
         end)
         IO.puts("")
         {:ok, coa_list}
@@ -769,13 +1002,19 @@ defmodule StellarCore.CLI do
       iex> StellarCore.CLI.approve_coa("coa-uuid", "operator@stellarops.com")
   """
   def approve_coa(coa_id, approved_by) do
-    case COAs.approve_coa(coa_id, approved_by) do
-      {:ok, coa} ->
-        IO.puts("\n  ✓ COA '#{coa_id}' approved by #{approved_by}.\n")
-        {:ok, coa}
-      {:error, reason} ->
-        IO.puts("\n  ✗ Failed to approve COA: #{inspect(reason)}\n")
-        {:error, reason}
+    case COAContext.get_coa(coa_id) do
+      nil ->
+        IO.puts("\n  ✗ Failed to approve COA: not found\n")
+        {:error, :not_found}
+      coa ->
+        case COAContext.approve_coa(coa, approved_by) do
+          {:ok, updated} ->
+            IO.puts("\n  ✓ COA '#{coa_id}' approved by #{approved_by}.\n")
+            {:ok, updated}
+          {:error, reason} ->
+            IO.puts("\n  ✗ Failed to approve COA: #{inspect(reason)}\n")
+            {:error, reason}
+        end
     end
   end
 
@@ -786,15 +1025,19 @@ defmodule StellarCore.CLI do
       iex> StellarCore.CLI.select_coa("coa-uuid", "operator@stellarops.com")
   """
   def select_coa(coa_id, selected_by) do
-    case COAs.select_coa(coa_id, selected_by) do
-      {:ok, result} ->
-        IO.puts("\n  ✓ COA '#{coa_id}' selected for execution.")
-        IO.puts("    Mission created: #{result.mission.id}")
-        IO.puts("")
-        {:ok, result}
-      {:error, reason} ->
-        IO.puts("\n  ✗ Failed to select COA: #{inspect(reason)}\n")
-        {:error, reason}
+    case COAContext.get_coa(coa_id) do
+      nil ->
+        IO.puts("\n  ✗ Failed to select COA: not found\n")
+        {:error, :not_found}
+      coa ->
+        case COAContext.approve_coa(coa, selected_by) do
+          {:ok, updated} ->
+            IO.puts("\n  ✓ COA '#{coa_id}' selected for execution by #{selected_by}.\n")
+            {:ok, updated}
+          {:error, reason} ->
+            IO.puts("\n  ✗ Failed to select COA: #{inspect(reason)}\n")
+            {:error, reason}
+        end
     end
   end
 
@@ -805,13 +1048,19 @@ defmodule StellarCore.CLI do
       iex> StellarCore.CLI.reject_coa("coa-uuid", "operator@stellarops.com", "Insufficient fuel")
   """
   def reject_coa(coa_id, rejected_by, notes \\ nil) do
-    case COAs.reject_coa(coa_id, rejected_by, notes) do
-      {:ok, coa} ->
-        IO.puts("\n  ✓ COA '#{coa_id}' rejected.\n")
-        {:ok, coa}
-      {:error, reason} ->
-        IO.puts("\n  ✗ Failed to reject COA: #{inspect(reason)}\n")
-        {:error, reason}
+    case COAContext.get_coa(coa_id) do
+      nil ->
+        IO.puts("\n  ✗ Failed to reject COA: not found\n")
+        {:error, :not_found}
+      coa ->
+        case COAContext.reject_coa(coa, rejected_by, notes) do
+          {:ok, updated} ->
+            IO.puts("\n  ✓ COA '#{coa_id}' rejected.\n")
+            {:ok, updated}
+          {:error, reason} ->
+            IO.puts("\n  ✗ Failed to reject COA: #{inspect(reason)}\n")
+            {:error, reason}
+        end
     end
   end
 
@@ -1076,6 +1325,15 @@ defmodule StellarCore.CLI do
       conjunctions(opts)                    List conjunctions
       conjunction(id)                       Show conjunction details
       screen_conjunctions()                 Trigger conjunction screening
+
+    ─────────────────────────────────────────────────────────────────────────
+    TLE DATA
+    ─────────────────────────────────────────────────────────────────────────
+      fetch_tles(category)                  Fetch TLEs from CelesTrak
+                                            Categories: :stations, :active,
+                                            :weather, :debris
+      refresh_tle(norad_id)                 Refresh TLE for one object
+      tle_status()                          Show TLE freshness stats
 
     ─────────────────────────────────────────────────────────────────────────
     COURSES OF ACTION (COA)

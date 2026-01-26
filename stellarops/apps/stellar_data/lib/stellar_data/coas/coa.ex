@@ -174,6 +174,30 @@ defmodule StellarData.COAs.COA do
     |> change(%{status: :rejected})
   end
 
+  @doc """
+  Changeset for rejecting a COA with rejection details.
+  """
+  def reject_changeset(coa, rejected_by, notes) do
+    coa
+    |> change(%{
+      status: :rejected,
+      selected_by: rejected_by,
+      failure_reason: notes
+    })
+  end
+
+  @doc """
+  Changeset for approving a COA.
+  """
+  def approve_changeset(coa, approved_by) do
+    coa
+    |> change(%{
+      status: :selected,
+      selected_at: DateTime.utc_now(),
+      selected_by: approved_by
+    })
+  end
+
   # Private helpers
 
   defp validate_delta_v_direction(changeset) do

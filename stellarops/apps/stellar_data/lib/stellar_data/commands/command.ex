@@ -85,7 +85,7 @@ defmodule StellarData.Commands.Command do
 
   # Valid transitions
   defp validate_transition(changeset, :queued, new) when new in [:pending, :cancelled], do: changeset
-  defp validate_transition(changeset, :pending, new) when new in [:acknowledged, :failed, :cancelled], do: changeset
+  defp validate_transition(changeset, :pending, new) when new in [:acknowledged, :executing, :failed, :cancelled], do: changeset
   defp validate_transition(changeset, :acknowledged, new) when new in [:executing, :failed, :cancelled], do: changeset
   defp validate_transition(changeset, :executing, new) when new in [:completed, :failed], do: changeset
   defp validate_transition(changeset, same, same), do: changeset

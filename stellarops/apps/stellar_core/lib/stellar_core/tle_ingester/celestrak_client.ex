@@ -122,21 +122,30 @@ defmodule StellarCore.TLEIngester.CelesTrakClient do
     Logger.debug("Fetching TLE from CelesTrak: #{url}")
     
     headers = [
-      {"User-Agent", "StellarOps/1.0"},
-      {"Accept", "text/plain"}
+      {~c"User-Agent", ~c"StellarOps/1.0"},
+      {~c"Accept", ~c"text/plain"}
     ]
     
-    case :httpc.request(:get, {String.to_charlist(url), headers}, 
-           [{:timeout, @timeout}, {:connect_timeout, 10_000}], 
-           [{:body_format, :binary}]) do
+    http_opts = [
+      {:timeout, @timeout}, 
+      {:connect_timeout, 10_000},
+      {:ssl, [
+        {:verify, :verify_none}
+      ]}
+    ]
+    
+    case :httpc.request(:get, {String.to_charlist(url), headers}, http_opts, [{:body_format, :binary}]) do
       {:ok, {{_, 200, _}, _headers, body}} ->
-        {:ok, body}
+        # Ensure body is binary (httpc can return charlist)
+        body_binary = if is_list(body), do: :erlang.list_to_binary(body), else: body
+        Logger.debug("CelesTrak returned #{byte_size(body_binary)} bytes")
+        {:ok, body_binary}
         
       {:ok, {{_, 204, _}, _headers, _body}} ->
         {:ok, ""}  # No content (empty category)
         
       {:ok, {{_, status, reason}, _headers, body}} ->
-        Logger.warning("CelesTrak returned #{status}: #{reason}")
+        Logger.warning("CelesTrak returned #{status}: #{inspect(reason)}")
         {:error, {:http_error, status, body}}
         
       {:error, reason} ->

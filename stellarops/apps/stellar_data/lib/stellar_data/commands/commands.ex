@@ -100,6 +100,7 @@ defmodule StellarData.Commands do
   Updates a command's status by ID.
   """
   def update_command_status(command_id, status, result \\ nil) when is_atom(status) do
+    require Logger
     case get_command(command_id) do
       nil ->
         {:error, :not_found}
@@ -117,9 +118,16 @@ defmodule StellarData.Commands do
             _ -> attrs
           end
 
-        command
-        |> Command.status_changeset(attrs)
-        |> Repo.update()
+        changeset = command |> Command.status_changeset(attrs)
+        
+        case Repo.update(changeset) do
+          {:ok, updated} = success ->
+            Logger.debug("Command #{command_id} status updated: #{command.status} -> #{updated.status}")
+            success
+          {:error, changeset} = error ->
+            Logger.warning("Command #{command_id} status update failed: #{inspect(changeset.errors)}")
+            error
+        end
     end
   end
 
