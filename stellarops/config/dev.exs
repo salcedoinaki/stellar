@@ -22,10 +22,10 @@ config :stellar_data, StellarData.Repo,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
-# Logger
+# Logger - default to :info for clean console, use CLI.debug(true) for debug output
 config :logger, :console,
   format: "[$level] $message\n",
-  level: :debug
+  level: :info
 
 # Allow anonymous WebSocket connections in development
 config :stellar_web, :allow_anonymous_websocket, true

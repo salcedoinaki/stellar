@@ -15,6 +15,8 @@ defmodule StellarCore.CLI do
       StellarCore.CLI.create_satellite("SAT-001", "My Satellite")
   """
 
+  require Logger
+
   alias StellarCore.{Satellite, Alarms, ConjunctionDetector, COAPlanner}
   alias StellarCore.Commands.CommandQueue
   alias StellarData.{Satellites, Commands, Missions, GroundStations, SpaceObjects, Conjunctions, COAs}
@@ -39,7 +41,9 @@ defmodule StellarCore.CLI do
       IO.puts("  StellarCore.CLI.create_satellite(\"SAT-001\", \"My Satellite\")")
     else
       Enum.each(sats, fn sat ->
-        status = if sat.active, do: "✓ ACTIVE", else: "✗ INACTIVE"
+        # Check if GenServer is actually running
+        genserver_running = Satellite.alive?(sat.id)
+        status = if sat.active && genserver_running, do: "✓ ACTIVE", else: "✗ INACTIVE"
         IO.puts("  [#{sat.id}] #{sat.name} - #{status}")
         IO.puts("      Mode: #{sat.mode || "unknown"}, Energy: #{sat.energy || 0}%")
         IO.puts("")
@@ -68,7 +72,7 @@ defmodule StellarCore.CLI do
         IO.puts("  Active:      #{sat.active}")
         IO.puts("  Mode:        #{sat.mode || "unknown"}")
         IO.puts("  Energy:      #{sat.energy || 0}%")
-        IO.puts("  Memory:      #{sat.memory_used || 0} / #{sat.memory_total || 100} MB")
+        IO.puts("  Memory:      #{sat.memory_used || 0} MB")
         IO.puts("  NORAD ID:    #{sat.norad_id || "N/A"}")
         IO.puts("  Created:     #{sat.inserted_at}")
         IO.puts("")
@@ -77,8 +81,11 @@ defmodule StellarCore.CLI do
         case Satellite.get_state(id) do
           {:ok, state} ->
             IO.puts("  --- Runtime State (GenServer) ---")
-            IO.puts("  Health:      #{state.health_status}")
-            IO.puts("  Last Update: #{state.last_telemetry}")
+            IO.puts("  Mode:        #{state.mode}")
+            IO.puts("  Energy:      #{state.energy}%")
+            IO.puts("  Memory:      #{state.memory_used} MB")
+            {x, y, z} = state.position
+            IO.puts("  Position:    (#{x}, #{y}, #{z})")
             IO.puts("")
           _ -> :ok
         end
@@ -210,8 +217,9 @@ defmodule StellarCore.CLI do
   ## Example
       iex> StellarCore.CLI.set_mode("SAT-001", "safe")
   """
-  def set_mode(satellite_id, mode) do
-    case Satellite.update_mode(satellite_id, mode) do
+  def set_mode(satellite_id, mode) when is_binary(mode) do
+    mode_atom = String.to_existing_atom(mode)
+    case Satellite.set_mode(satellite_id, mode_atom) do
       {:ok, state} ->
         IO.puts("\n  ✓ Satellite '#{satellite_id}' mode changed to '#{mode}'.\n")
         {:ok, state}
@@ -219,6 +227,10 @@ defmodule StellarCore.CLI do
         IO.puts("\n  ✗ Failed to update mode: #{inspect(reason)}\n")
         {:error, reason}
     end
+  rescue
+    ArgumentError ->
+      IO.puts("\n  ✗ Invalid mode '#{mode}'. Valid modes: nominal, safe, survival\n")
+      {:error, :invalid_mode}
   end
 
   @doc """
@@ -260,7 +272,7 @@ defmodule StellarCore.CLI do
     limit = Keyword.get(opts, :limit, 20)
     status = Keyword.get(opts, :status)
     
-    cmds = Commands.list_commands(satellite_id, [limit: limit, status: status])
+    cmds = Commands.get_command_history(satellite_id, [limit: limit, status: status])
     
     IO.puts("\n=== COMMANDS FOR #{satellite_id} (#{length(cmds)}) ===\n")
     
@@ -269,10 +281,13 @@ defmodule StellarCore.CLI do
     else
       Enum.each(cmds, fn cmd ->
         status_icon = case cmd.status do
+          :queued -> "◌"
+          :pending -> "◌"
+          :acknowledged -> "◎"
+          :executing -> "▶"
           :completed -> "✓"
           :failed -> "✗"
-          :pending -> "◌"
-          :executing -> "▶"
+          :cancelled -> "⊘"
           _ -> "?"
         end
         IO.puts("  [#{status_icon}] #{cmd.id} - #{cmd.command_type} (#{cmd.status})")
@@ -981,8 +996,12 @@ defmodule StellarCore.CLI do
     sat_sup = if Process.whereis(StellarCore.Satellite.Supervisor), do: "✓ Running", else: "✗ Down"
     IO.puts("  Sat Supervisor: #{sat_sup}")
     
-    # Check conjunction detector
-    conj_det = if Process.whereis(StellarCore.ConjunctionDetector), do: "✓ Running", else: "✗ Down"
+    # Check conjunction detector (check both possible modules)
+    conj_det = cond do
+      Process.whereis(StellarCore.SSA.ConjunctionDetector) -> "✓ Running"
+      Process.whereis(StellarCore.ConjunctionDetector) -> "✓ Running"
+      true -> "✗ Down"
+    end
     IO.puts("  Conj Detector:  #{conj_det}")
     
     # Check command queue
@@ -1081,6 +1100,10 @@ defmodule StellarCore.CLI do
       status()                              Show system status overview
       health()                              Show service health check
       help()                                Show this help message
+      debug()                               Show current debug mode
+      debug(true/false)                     Enable/disable debug logging
+      quiet()                               Disable debug logging (alias)
+      verbose()                             Enable debug logging (alias)
 
     ─────────────────────────────────────────────────────────────────────────
     TIPS
@@ -1093,5 +1116,82 @@ defmodule StellarCore.CLI do
     """)
     
     :ok
+  end
+
+  # ============================================================================
+  # DEBUG MODE COMMANDS
+  # ============================================================================
+
+  @doc """
+  Shows current debug mode status.
+
+  ## Example
+      iex> StellarCore.CLI.debug()
+  """
+  def debug do
+    current_level = Logger.level()
+    is_debug = current_level == :debug
+    
+    IO.puts("\n=== DEBUG MODE ===")
+    IO.puts("  Current log level: #{current_level}")
+    IO.puts("  Debug output: #{if is_debug, do: "✓ ENABLED", else: "✗ DISABLED"}")
+    IO.puts("")
+    IO.puts("  Use debug(true) to enable debug logging")
+    IO.puts("  Use debug(false) or quiet() to disable")
+    IO.puts("")
+    
+    {:ok, is_debug}
+  end
+
+  @doc """
+  Enables or disables debug logging.
+
+  When debug mode is enabled, you'll see detailed database queries,
+  GenServer messages, and other low-level system activity.
+
+  When disabled (default for demos), only info, warning, and error
+  messages are shown.
+
+  ## Examples
+      iex> StellarCore.CLI.debug(true)   # Enable debug output
+      iex> StellarCore.CLI.debug(false)  # Disable debug output
+  """
+  def debug(enabled) when is_boolean(enabled) do
+    new_level = if enabled, do: :debug, else: :info
+    Logger.configure(level: new_level)
+    
+    if enabled do
+      IO.puts("\n  ✓ Debug mode ENABLED - showing all log output")
+      IO.puts("    Use debug(false) or quiet() to disable\n")
+    else
+      IO.puts("\n  ✓ Debug mode DISABLED - clean console output")
+      IO.puts("    Use debug(true) or verbose() to enable\n")
+    end
+    
+    {:ok, enabled}
+  end
+
+  @doc """
+  Disables debug logging (alias for debug(false)).
+
+  Useful for demos and presentations where you want clean output.
+
+  ## Example
+      iex> StellarCore.CLI.quiet()
+  """
+  def quiet do
+    debug(false)
+  end
+
+  @doc """
+  Enables debug logging (alias for debug(true)).
+
+  Useful for troubleshooting and development.
+
+  ## Example
+      iex> StellarCore.CLI.verbose()
+  """
+  def verbose do
+    debug(true)
   end
 end

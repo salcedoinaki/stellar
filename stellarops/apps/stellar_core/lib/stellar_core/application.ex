@@ -10,6 +10,7 @@ defmodule StellarCore.Application do
   - MissionScheduler (for priority-based mission scheduling)
   - MissionExecutor (for executing missions on satellites)
   - CommandQueue (for satellite command queueing and dispatch)
+  - CommandExecutor (for routing commands through ground stations)
   - DownlinkManager (for contact window management)
   - DownlinkScheduler (for scheduling and executing downlinks)
   - Alarms (for alarm and notification tracking)
@@ -31,6 +32,7 @@ defmodule StellarCore.Application do
   alias StellarCore.Scheduler.DownlinkScheduler
   alias StellarCore.Missions.Executor, as: MissionExecutor
   alias StellarCore.Commands.CommandQueue
+  alias StellarCore.Commands.CommandExecutor
   alias StellarCore.TLE.RefreshService
   alias StellarCore.Telemetry.Ingestion, as: TelemetryIngestion
   alias StellarCore.Telemetry.Aggregator, as: TelemetryAggregator
@@ -71,6 +73,9 @@ defmodule StellarCore.Application do
       
       # Command queue
       CommandQueue,
+      
+      # Command executor (routes commands through ground stations)
+      CommandExecutor,
       
       # Downlink management
       DownlinkManager,

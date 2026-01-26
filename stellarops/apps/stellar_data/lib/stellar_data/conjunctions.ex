@@ -375,6 +375,76 @@ defmodule StellarData.Conjunctions do
     |> Repo.update_all(set: [status: :passed, updated_at: now])
   end
 
+  @doc """
+  Upserts a conjunction (insert or update based on primary/secondary/TCA).
+
+  If a matching conjunction exists (same objects within 5-minute TCA window),
+  it will be updated. Otherwise, a new conjunction is created.
+
+  ## Examples
+
+      iex> upsert_conjunction(%{primary_object_id: 1, secondary_object_id: 2, tca: ~U[2026-01-27 12:00:00Z]})
+      {:ok, %Conjunction{}}
+
+  """
+  def upsert_conjunction(attrs) when is_map(attrs) do
+    case find_matching_conjunction(attrs) do
+      nil -> create_conjunction(attrs)
+      existing -> update_conjunction(existing, attrs)
+    end
+  end
+
+  defp find_matching_conjunction(%{primary_object_id: primary, secondary_object_id: secondary, tca: tca}) do
+    from(c in Conjunction,
+      where: c.primary_object_id == ^primary,
+      where: c.secondary_object_id == ^secondary,
+      where: c.tca >= ^DateTime.add(tca, -300, :second),
+      where: c.tca <= ^DateTime.add(tca, 300, :second)
+    )
+    |> Repo.one()
+  end
+
+  defp find_matching_conjunction(_), do: nil
+
+  @doc """
+  Assigns a COA to a conjunction.
+
+  ## Examples
+
+      iex> assign_coa(conjunction, coa_id)
+      {:ok, %Conjunction{}}
+
+  """
+  def assign_coa(%Conjunction{} = conjunction, coa_id) do
+    conjunction
+    |> Conjunction.changeset(%{selected_coa_id: coa_id})
+    |> Repo.update()
+  end
+
+  @doc """
+  Cleans up conjunctions where TCA has passed.
+
+  Updates status of passed conjunctions to :passed.
+
+  ## Examples
+
+      iex> cleanup_passed_conjunctions()
+      {:ok, 5}
+
+  """
+  def cleanup_passed_conjunctions do
+    now = DateTime.utc_now()
+
+    {count, _} =
+      from(c in Conjunction,
+        where: c.tca < ^now,
+        where: c.status in [:active, :monitoring, :predicted]
+      )
+      |> Repo.update_all(set: [status: :passed, updated_at: now])
+
+    {:ok, count}
+  end
+
   # Private functions
 
   defp apply_filters(query, opts) do

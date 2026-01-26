@@ -153,6 +153,49 @@ defmodule StellarData.SSA do
   end
 
   # ============================================================================
+  # Conjunction Statistics
+  # ============================================================================
+
+  @doc """
+  Counts active conjunctions by severity level.
+
+  ## Examples
+
+      iex> count_conjunctions_by_severity(:critical)
+      5
+
+  """
+  def count_conjunctions_by_severity(severity) do
+    alias StellarData.Conjunctions.Conjunction
+
+    from(c in Conjunction,
+      where: c.severity == ^severity,
+      where: c.status in [:active, :monitoring, :predicted],
+      select: count(c.id)
+    )
+    |> Repo.one() || 0
+  end
+
+  @doc """
+  Counts conjunctions by status.
+
+  ## Examples
+
+      iex> count_conjunctions_by_status(:active)
+      10
+
+  """
+  def count_conjunctions_by_status(status) do
+    alias StellarData.Conjunctions.Conjunction
+
+    from(c in Conjunction,
+      where: c.status == ^status,
+      select: count(c.id)
+    )
+    |> Repo.one() || 0
+  end
+
+  # ============================================================================
   # Summary Statistics
   # ============================================================================
 
