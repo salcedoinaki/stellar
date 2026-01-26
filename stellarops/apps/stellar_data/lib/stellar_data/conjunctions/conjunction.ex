@@ -81,6 +81,14 @@ defmodule StellarData.Conjunctions.Conjunction do
     # Analysis notes
     field :notes, :string
 
+    # Positions at TCA (ECI coordinates in km)
+    field :primary_position_x_km, :float
+    field :primary_position_y_km, :float
+    field :primary_position_z_km, :float
+    field :secondary_position_x_km, :float
+    field :secondary_position_y_km, :float
+    field :secondary_position_z_km, :float
+
     timestamps()
   end
 
@@ -109,7 +117,13 @@ defmodule StellarData.Conjunctions.Conjunction do
     :cdm_id,
     :screening_date,
     :last_updated,
-    :notes
+    :notes,
+    :primary_position_x_km,
+    :primary_position_y_km,
+    :primary_position_z_km,
+    :secondary_position_x_km,
+    :secondary_position_y_km,
+    :secondary_position_z_km
   ]
 
   @doc """

@@ -302,17 +302,9 @@ function transformConjunction(raw: any): Conjunction {
           name: raw.primary_object.name,
         }
       : undefined,
-    // Position data at TCA (mock if not provided by backend)
-    asset_position_at_tca: raw.asset_position_at_tca ?? {
-      x_km: 0,
-      y_km: 0,
-      z_km: 0,
-    },
-    object_position_at_tca: raw.object_position_at_tca ?? {
-      x_km: 0,
-      y_km: 0,
-      z_km: 0,
-    },
+    // Position data at TCA (null if not available from backend)
+    asset_position_at_tca: raw.asset_position_at_tca ?? null,
+    object_position_at_tca: raw.object_position_at_tca ?? null,
   }
 }
 

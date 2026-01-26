@@ -435,6 +435,10 @@ defmodule StellarCore.SSA.ConjunctionDetector do
   defp build_conjunction_attrs(primary, secondary, approach) do
     {:ok, tca, _} = DateTime.from_iso8601(approach.timestamp)
 
+    # Extract positions at TCA (already in km from trajectory propagation)
+    primary_pos = approach.primary_position || %{}
+    secondary_pos = approach.secondary_position || %{}
+
     %{
       primary_object_id: primary.id,
       secondary_object_id: secondary.id,
@@ -445,7 +449,14 @@ defmodule StellarCore.SSA.ConjunctionDetector do
       status: :predicted,
       data_source: "stellar_detector",
       screening_date: DateTime.utc_now(),
-      last_updated: DateTime.utc_now()
+      last_updated: DateTime.utc_now(),
+      # Position data at TCA (ECI coordinates in km)
+      primary_position_x_km: primary_pos[:x],
+      primary_position_y_km: primary_pos[:y],
+      primary_position_z_km: primary_pos[:z],
+      secondary_position_x_km: secondary_pos[:x],
+      secondary_position_y_km: secondary_pos[:y],
+      secondary_position_z_km: secondary_pos[:z]
     }
   end
 end

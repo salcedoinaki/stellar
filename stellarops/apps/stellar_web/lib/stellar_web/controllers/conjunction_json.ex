@@ -45,7 +45,18 @@ defmodule StellarWeb.ConjunctionJSON do
       cdm_id: conjunction.cdm_id,
       notes: conjunction.notes,
       inserted_at: conjunction.inserted_at,
-      updated_at: conjunction.updated_at
+      updated_at: conjunction.updated_at,
+      # Position data at TCA (ECI coordinates in km)
+      asset_position_at_tca: position_data(
+        conjunction.primary_position_x_km,
+        conjunction.primary_position_y_km,
+        conjunction.primary_position_z_km
+      ),
+      object_position_at_tca: position_data(
+        conjunction.secondary_position_x_km,
+        conjunction.secondary_position_y_km,
+        conjunction.secondary_position_z_km
+      )
     }
 
     # Add asset details if provided
@@ -54,6 +65,17 @@ defmodule StellarWeb.ConjunctionJSON do
     else
       base
     end
+  end
+
+  defp position_data(nil, _, _), do: nil
+  defp position_data(_, nil, _), do: nil
+  defp position_data(_, _, nil), do: nil
+  defp position_data(x, y, z) do
+    %{
+      x_km: x,
+      y_km: y,
+      z_km: z
+    }
   end
 
   defp object_data(nil), do: nil

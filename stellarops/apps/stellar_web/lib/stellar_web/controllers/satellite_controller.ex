@@ -205,7 +205,7 @@ defmodule StellarWeb.SatelliteController do
       id: state.id,
       mode: Atom.to_string(state.mode),
       energy: state.energy,
-      memory_used: state.memory_used,
+      memory: state.memory_used,
       position: %{
         x: elem(state.position, 0),
         y: elem(state.position, 1),
