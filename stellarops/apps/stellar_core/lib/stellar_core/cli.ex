@@ -1452,4 +1452,154 @@ defmodule StellarCore.CLI do
   def verbose do
     debug(true)
   end
+
+  # ============================================================================
+  # DEMO / SEED COMMANDS
+  # ============================================================================
+
+  @doc """
+  Seeds demo conjunction events for presentation purposes.
+
+  Creates realistic conjunction scenarios with different severities
+  that can be used to demonstrate COA generation and workflows.
+
+  ## Example
+      iex> StellarCore.CLI.seed_demo_conjunctions()
+  """
+  def seed_demo_conjunctions do
+    IO.puts("\n  ▶ Creating demo conjunctions...\n")
+
+    # Get space objects from the database
+    objects = SpaceObjects.list_objects(limit: 10)
+    
+    if length(objects) < 2 do
+      IO.puts("  ✗ Need at least 2 space objects in database.")
+      IO.puts("    Run the seeds first or create space objects.")
+      {:error, :insufficient_objects}
+    else
+      now = DateTime.utc_now()
+      
+      # Get first few objects for conjunctions
+      [obj1, obj2 | rest] = objects
+      obj3 = List.first(rest) || obj2
+      obj4 = Enum.at(rest, 1) || obj1
+
+      # Get satellites if available
+      sats = Satellites.list_satellites()
+      sat1 = List.first(sats)
+      sat2 = Enum.at(sats, 1)
+
+      demo_conjunctions = [
+        # Critical - immediate action required
+        %{
+          primary_object_id: obj1.id,
+          secondary_object_id: obj2.id,
+          satellite_id: sat1 && sat1.id,
+          tca: DateTime.add(now, 4 * 3600, :second),
+          miss_distance_m: 450.0,
+          relative_velocity_ms: 14200.0,
+          collision_probability: 0.00035,
+          severity: :critical,
+          status: :active,
+          data_source: "DEMO-18SDS",
+          notes: "Demo: Critical conjunction requiring immediate COA"
+        },
+        # High - action likely needed
+        %{
+          primary_object_id: obj2.id,
+          secondary_object_id: obj3.id,
+          satellite_id: sat2 && sat2.id,
+          tca: DateTime.add(now, 12 * 3600, :second),
+          miss_distance_m: 2800.0,
+          relative_velocity_ms: 11500.0,
+          collision_probability: 0.00012,
+          severity: :high,
+          status: :active,
+          data_source: "DEMO-LeoLabs",
+          notes: "Demo: High-severity approach"
+        },
+        # Medium - monitoring
+        %{
+          primary_object_id: obj1.id,
+          secondary_object_id: obj4.id,
+          satellite_id: nil,
+          tca: DateTime.add(now, 36 * 3600, :second),
+          miss_distance_m: 7500.0,
+          relative_velocity_ms: 9800.0,
+          collision_probability: 0.000045,
+          severity: :medium,
+          status: :monitoring,
+          data_source: "DEMO-18SDS",
+          notes: "Demo: Medium-risk being monitored"
+        },
+        # Low - tracking only
+        %{
+          primary_object_id: obj3.id,
+          secondary_object_id: obj4.id,
+          satellite_id: nil,
+          tca: DateTime.add(now, 72 * 3600, :second),
+          miss_distance_m: 15000.0,
+          relative_velocity_ms: 7200.0,
+          collision_probability: 0.000008,
+          severity: :low,
+          status: :predicted,
+          data_source: "DEMO-18SDS",
+          notes: "Demo: Low-risk tracking"
+        }
+      ]
+
+      created = Enum.reduce(demo_conjunctions, 0, fn attrs, acc ->
+        case Conjunctions.create_conjunction(attrs) do
+          {:ok, conj} ->
+            severity_icon = case conj.severity do
+              :critical -> "🔴"
+              :high -> "🟠"
+              :medium -> "🟡"
+              :low -> "🟢"
+              _ -> "⚪"
+            end
+            IO.puts("  #{severity_icon} Created #{conj.severity} conjunction: #{conj.id}")
+            IO.puts("      TCA: #{conj.tca}")
+            IO.puts("      Miss Distance: #{Float.round(conj.miss_distance_m / 1000, 2)} km")
+            IO.puts("")
+            acc + 1
+          {:error, changeset} ->
+            IO.puts("  ✗ Failed to create conjunction: #{inspect(changeset.errors)}")
+            acc
+        end
+      end)
+
+      IO.puts("  ✓ Created #{created} demo conjunctions.\n")
+      IO.puts("  Next steps:")
+      IO.puts("    CLI.conjunctions()           - View all conjunctions")
+      IO.puts("    CLI.generate_coas(\"<id>\")    - Generate COAs for a conjunction")
+      IO.puts("")
+      {:ok, created}
+    end
+  end
+
+  @doc """
+  Clears all demo conjunctions (those with DEMO data source).
+
+  ## Example
+      iex> StellarCore.CLI.clear_demo_conjunctions()
+  """
+  def clear_demo_conjunctions do
+    IO.puts("\n  ▶ Clearing demo conjunctions...\n")
+
+    conjs = Conjunctions.list_conjunctions()
+    demo_conjs = Enum.filter(conjs, fn c -> 
+      c.data_source && String.starts_with?(c.data_source, "DEMO") 
+    end)
+
+    deleted = Enum.reduce(demo_conjs, 0, fn conj, acc ->
+      case Conjunctions.delete_conjunction(conj) do
+        {:ok, _} -> acc + 1
+        {:error, _} -> acc
+      end
+    end)
+
+    IO.puts("  ✓ Deleted #{deleted} demo conjunctions.\n")
+    {:ok, deleted}
+  end
 end

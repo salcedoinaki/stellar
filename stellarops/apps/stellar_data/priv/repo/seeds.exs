@@ -276,10 +276,16 @@ created_objects =
         IO.puts("  ✓ Created space object: #{obj.norad_id} (#{obj.name})")
         obj
 
-      {:error, changeset} ->
-        IO.puts("  ✗ Failed to create space object: #{obj_attrs.norad_id}")
-        IO.inspect(changeset.errors)
-        nil
+      {:error, _changeset} ->
+        # Object already exists, fetch it
+        case SpaceObjects.get_object_by_norad_id(obj_attrs.norad_id) do
+          nil ->
+            IO.puts("  ✗ Failed to create/find space object: #{obj_attrs.norad_id}")
+            nil
+          existing ->
+            IO.puts("  ✓ Found existing space object: #{existing.norad_id} (#{existing.name})")
+            existing
+        end
     end
   end
   |> Enum.reject(&is_nil/1)
@@ -287,8 +293,14 @@ created_objects =
 # Create conjunctions
 IO.puts("\n⚠️  Creating conjunction events...")
 
-# Get some object IDs for conjunctions
-[iss, cosmos_2542, debris1, cosmos_2499 | _rest] = created_objects
+# Get some object IDs for conjunctions (need at least 4 objects)
+{iss, cosmos_2542, debris1, cosmos_2499} = 
+  case created_objects do
+    [a, b, c, d | _rest] -> {a, b, c, d}
+    _ ->
+      IO.puts("  ⚠️  Not enough space objects to create conjunctions, skipping...")
+      {nil, nil, nil, nil}
+  end
 
 # Get satellite IDs
 sat_001 = "SAT-001"
@@ -296,72 +308,76 @@ sat_003 = "SAT-003"
 
 now = DateTime.utc_now()
 
-conjunctions = [
-  %{
-    primary_object_id: iss.id,
-    secondary_object_id: debris1.id,
-    satellite_id: nil,
-    tca: DateTime.add(now, 2 * 24 * 3600, :second),
-    miss_distance_m: 450.0,
-    relative_velocity_ms: 14500.0,
-    collision_probability: 0.00012,
-    severity: :medium,
-    status: :predicted,
-    data_source: "18SDS"
-  },
-  %{
-    primary_object_id: nil,
-    secondary_object_id: cosmos_2542.id,
-    satellite_id: sat_001,
-    tca: DateTime.add(now, 8 * 3600, :second),
-    miss_distance_m: 1200.0,
-    relative_velocity_ms: 7800.0,
-    collision_probability: 0.000025,
-    severity: :low,
-    status: :monitoring,
-    data_source: "LeoLabs"
-  },
-  %{
-    primary_object_id: nil,
-    secondary_object_id: cosmos_2499.id,
-    satellite_id: sat_003,
-    tca: DateTime.add(now, 4 * 3600, :second),
-    miss_distance_m: 180.0,
-    relative_velocity_ms: 12300.0,
-    collision_probability: 0.0045,
-    severity: :critical,
-    status: :active,
-    data_source: "18SDS",
-    notes: "High-priority event - suspected ASAT proximity approach"
-  },
-  %{
-    primary_object_id: iss.id,
-    secondary_object_id: cosmos_2499.id,
-    satellite_id: nil,
-    tca: DateTime.add(now, 36 * 3600, :second),
-    miss_distance_m: 2500.0,
-    relative_velocity_ms: 9800.0,
-    collision_probability: 0.000001,
-    severity: :low,
-    status: :predicted,
-    data_source: "18SDS"
-  }
-]
+created_conjunctions = 
+  if iss != nil and cosmos_2542 != nil and debris1 != nil and cosmos_2499 != nil do
+    conjunctions = [
+      %{
+        primary_object_id: iss.id,
+        secondary_object_id: debris1.id,
+        satellite_id: nil,
+        tca: DateTime.add(now, 2 * 24 * 3600, :second),
+        miss_distance_m: 450.0,
+        relative_velocity_ms: 14500.0,
+        collision_probability: 0.00012,
+        severity: :medium,
+        status: :predicted,
+        data_source: "18SDS"
+      },
+      %{
+        primary_object_id: nil,
+        secondary_object_id: cosmos_2542.id,
+        satellite_id: sat_001,
+        tca: DateTime.add(now, 8 * 3600, :second),
+        miss_distance_m: 1200.0,
+        relative_velocity_ms: 7800.0,
+        collision_probability: 0.000025,
+        severity: :low,
+        status: :monitoring,
+        data_source: "LeoLabs"
+      },
+      %{
+        primary_object_id: nil,
+        secondary_object_id: cosmos_2499.id,
+        satellite_id: sat_003,
+        tca: DateTime.add(now, 4 * 3600, :second),
+        miss_distance_m: 180.0,
+        relative_velocity_ms: 12300.0,
+        collision_probability: 0.0045,
+        severity: :critical,
+        status: :active,
+        data_source: "18SDS",
+        notes: "High-priority event - suspected ASAT proximity approach"
+      },
+      %{
+        primary_object_id: iss.id,
+        secondary_object_id: cosmos_2499.id,
+        satellite_id: nil,
+        tca: DateTime.add(now, 36 * 3600, :second),
+        miss_distance_m: 2500.0,
+        relative_velocity_ms: 9800.0,
+        collision_probability: 0.000001,
+        severity: :low,
+        status: :predicted,
+        data_source: "18SDS"
+      }
+    ]
 
-created_conjunctions =
-  for conj_attrs <- conjunctions do
-    case Conjunctions.create_conjunction(conj_attrs) do
-      {:ok, conj} ->
-        IO.puts("  ✓ Created conjunction: #{conj.id} (severity: #{conj.severity})")
-        conj
+    for conj_attrs <- conjunctions do
+      case Conjunctions.create_conjunction(conj_attrs) do
+        {:ok, conj} ->
+          IO.puts("  ✓ Created conjunction: #{conj.id} (severity: #{conj.severity})")
+          conj
 
-      {:error, changeset} ->
-        IO.puts("  ✗ Failed to create conjunction")
-        IO.inspect(changeset.errors)
-        nil
+        {:error, changeset} ->
+          IO.puts("  ✗ Failed to create conjunction")
+          IO.inspect(changeset.errors)
+          nil
+      end
     end
+    |> Enum.reject(&is_nil/1)
+  else
+    []
   end
-  |> Enum.reject(&is_nil/1)
 
 IO.puts("\n🔒 SSA data seeding complete!")
 IO.puts("   #{length(created_objects)} space objects")

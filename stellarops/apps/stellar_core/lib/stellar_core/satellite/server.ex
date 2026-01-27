@@ -17,6 +17,7 @@ defmodule StellarCore.Satellite.Server do
 
   alias StellarCore.Satellite.State
   alias StellarCore.Satellite.Registry
+  alias StellarData.Satellites
 
   # ============================================================================
   # Client API
@@ -102,12 +103,16 @@ defmodule StellarCore.Satellite.Server do
   def handle_call({:update_energy, delta}, _from, state) do
     new_state = State.update_energy(state, delta)
     log_mode_change(state.mode, new_state.mode, state.id)
+    # Persist energy change to database
+    Satellites.update_satellite_state_by_id(state.id, %{energy: new_state.energy})
     {:reply, {:ok, new_state}, new_state}
   end
 
   @impl true
   def handle_call({:update_memory, memory}, _from, state) do
     new_state = State.update_memory(state, memory)
+    # Persist memory change to database
+    Satellites.update_satellite_state_by_id(state.id, %{memory_used: new_state.memory_used})
     {:reply, {:ok, new_state}, new_state}
   end
 
@@ -115,6 +120,8 @@ defmodule StellarCore.Satellite.Server do
   def handle_call({:set_mode, mode}, _from, state) do
     new_state = State.set_mode(state, mode)
     log_mode_change(state.mode, new_state.mode, state.id)
+    # Persist mode change to database
+    Satellites.update_satellite_state_by_id(state.id, %{mode: mode})
     {:reply, {:ok, new_state}, new_state}
   end
 
